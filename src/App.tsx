@@ -1421,6 +1421,7 @@ export default function App() {
 
   return (
     <div
+      onDragStart={(event) => event.preventDefault()}
       style={{
         background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
         minHeight: "100vh",
@@ -1431,6 +1432,22 @@ export default function App() {
       }}
     >
       <style>{`
+        * {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-user-drag: none;
+        }
+
+        button {
+          user-select: none;
+          -webkit-user-select: none;
+        }
+
+        [data-point-index] {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-user-drag: none;
+        }
         @keyframes diceShake {
           0% { transform: rotate(0deg) scale(1); }
           20% { transform: rotate(-8deg) scale(1.08); }
