@@ -481,6 +481,33 @@ function playClickSound(): void {
   oscillator.stop(ctx.currentTime + 0.08);
 }
 
+
+function playWinFanfare(): void {
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  const ctx = new AudioContextClass();
+  const melody = [523, 659, 784, 1046, 1318];
+
+  melody.forEach((frequency, index) => {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const start = ctx.currentTime + index * 0.13;
+
+    oscillator.type = index % 2 === 0 ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(frequency, start);
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.13, start + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start(start);
+    oscillator.stop(start + 0.31);
+  });
+}
+
 function moveKey(move: Move): string {
   return `${move.from}:${move.to}:${move.die}:${move.isBarEntry ? 1 : 0}:${move.isBearOff ? 1 : 0}`;
 }
@@ -575,6 +602,8 @@ export default function App() {
   const [openingDice, setOpeningDice] = useState<number[] | null>(null);
   const [openingWinner, setOpeningWinner] = useState<Player | null>(null);
   const [awaitingModeChoice, setAwaitingModeChoice] = useState(false);
+  const [winner, setWinner] = useState<Player | null>(null);
+  const [confirmResign, setConfirmResign] = useState(false);
 
   useEffect(() => {
     console.table(runEngineSelfTests().map((result) => ({ result })));
@@ -611,9 +640,50 @@ export default function App() {
     setTimeout(() => setAnimatingMoveKey(null), 420);
   }
 
-  function flashBanner(text: string): void {
+  function flashBanner(text: string, duration = 1300): void {
     setTurnBanner(text);
-    setTimeout(() => setTurnBanner(null), 1300);
+    setTimeout(() => setTurnBanner(null), duration);
+  }
+
+  function checkForWinner(nextOff: OffState): Player | null {
+    if (nextOff.White >= 15) return "White";
+    if (nextOff.Black >= 15) return "Black";
+    return null;
+  }
+
+  function endGame(player: Player): void {
+    setWinner(player);
+    setMessage(`${player} wins! Game over.`);
+    playWinFanfare();
+    flashBanner(`${player.toUpperCase()} WINS`, 3000);
+    setRemainingDice([]);
+    setSelectedPoint(null);
+    setPreviewMoveKey(null);
+    setDraggingPoint(null);
+    setHoverPoint(null);
+    setDragPosition(null);
+    setConfirmResign(false);
+  }
+
+  function resignGame(): void {
+    if (winner !== null) {
+      setMessage(`${winner} has already won. Game over.`);
+      return;
+    }
+
+    if (!gameInProgress && !awaitingModeChoice) {
+      setMessage("No active game to resign.");
+      setConfirmResign(false);
+      return;
+    }
+
+    if (!confirmResign) {
+      setConfirmResign(true);
+      setMessage(`${currentPlayer}, click Confirm Resign to forfeit the game.`);
+      return;
+    }
+
+    endGame(opponent(currentPlayer));
   }
 
   async function rollOpening(): Promise<void> {
@@ -653,7 +723,8 @@ export default function App() {
     setOpeningDice([whiteDie, blackDie]);
     setOpeningWinner(winner);
     setAwaitingModeChoice(true);
-    flashBanner(`${winner.toUpperCase()} WINS OPENING ROLL`);
+    playWinFanfare();
+    flashBanner(`${winner.toUpperCase()} WINS OPENING ROLL`, 3500);
     setMessage(`Opening roll - White: ${whiteDie}, Black: ${blackDie}. ${winner} chooses WAR or PEACE.`);
   }
 
@@ -741,7 +812,7 @@ export default function App() {
       dice = [d1, d1, d1, d1];
       nextMode = mode === "WAR" ? "PEACE" : "WAR";
       setMode(nextMode);
-      flashBanner(`DOUBLES - ${nextMode}`);
+      flashBanner(`DOUBLES - ${nextMode}`, 3000);
     } else {
       dice = [d1, d2];
     }
@@ -778,6 +849,13 @@ export default function App() {
   }
 
   function submitTurn(): void {
+    const completedWinner = winner ?? checkForWinner(off);
+    if (completedWinner) {
+      if (winner === null) endGame(completedWinner);
+      setMessage(`${completedWinner} has already won. Game over.`);
+      return;
+    }
+
     if (remainingDice.length > 0 && legalMoves.length > 0) {
       setMessage("Use remaining legal moves or undo before submitting.");
       return;
@@ -847,9 +925,9 @@ export default function App() {
     if (move.isHit) flashBanner("HIT");
     if (move.isBearOff) flashBanner("BEAR OFF");
 
-    if (result.off[currentPlayer] >= 15) {
-      setMessage(`${currentPlayer} wins!`);
-      setRemainingDice([]);
+    const completedWinner = checkForWinner(result.off);
+    if (completedWinner) {
+      endGame(completedWinner);
       return;
     }
 
@@ -936,6 +1014,13 @@ export default function App() {
   }
 
   function handlePointClick(index: number): void {
+    const completedWinner = winner ?? checkForWinner(off);
+    if (completedWinner) {
+      if (winner === null) endGame(completedWinner);
+      setMessage(`${completedWinner} has already won. Game over.`);
+      return;
+    }
+
     if (awaitingModeChoice) {
       setMessage("Choose WAR or PEACE first.");
       return;
@@ -995,35 +1080,35 @@ export default function App() {
     };
 
     const positions: Record<string, React.CSSProperties> = {
-      "top-left": { top: 5, left: 5 },
-      "top-right": { top: 5, right: 5 },
-      "mid-left": { top: 13, left: 5 },
-      "mid-right": { top: 13, right: 5 },
-      center: { top: 13, left: 13 },
-      "bottom-left": { bottom: 5, left: 5 },
-      "bottom-right": { bottom: 5, right: 5 },
+      "top-left": { top: 7, left: 7 },
+      "top-right": { top: 7, right: 7 },
+      "mid-left": { top: 18, left: 7 },
+      "mid-right": { top: 18, right: 7 },
+      center: { top: 18, left: 18 },
+      "bottom-left": { bottom: 7, left: 7 },
+      "bottom-right": { bottom: 7, right: 7 },
     };
 
     return (
       <div
         key={index}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 10,
+          width: 44,
+          height: 44,
+          borderRadius: 16,
           background: "linear-gradient(145deg, #fff9df, #d0bd8d)",
           boxShadow:
             "inset -5px -5px 9px rgba(0,0,0,0.24), inset 4px 4px 7px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.5)",
           position: "relative",
-          marginRight: 6,
+          marginRight: 10,
         }}
       >
         {dotPositions[value].map((position, dotIndex) => (
           <div
             key={dotIndex}
             style={{
-              width: 5,
-              height: 5,
+              width: 7,
+              height: 7,
               borderRadius: "50%",
               background: "#111",
               position: "absolute",
@@ -1133,7 +1218,7 @@ export default function App() {
         style={{
           position: "relative",
           width: "100%",
-          height: "clamp(185px, 24vh, 275px)",
+          height: "clamp(190px, 26vh, 300px)",
           cursor: isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
           touchAction: "none",
           userSelect: "none",
@@ -1147,7 +1232,7 @@ export default function App() {
             position: "absolute",
             width: "100%",
             maxWidth: "clamp(44px, 4.1vw, 58px)",
-            height: "clamp(172px, 22vh, 255px)",
+            height: "clamp(180px, 24vh, 286px)",
             top: isTop ? 0 : undefined,
             bottom: isTop ? undefined : 0,
             background: triangleColor,
@@ -1216,7 +1301,7 @@ export default function App() {
                 background: "white",
                 color: "black",
                 padding: "2px 6px",
-                borderRadius: 10,
+                borderRadius: 16,
                 fontSize: 12,
                 marginTop: 4,
               }}
@@ -1230,25 +1315,74 @@ export default function App() {
   }
 
   function PipPanel({ label, value, light }: { label: string; value: number; light?: boolean }) {
+    const shortLabel = label.includes("WHITE") ? "WHITE" : "BLACK";
+
     return (
       <div
         style={{
           background: light
-            ? "linear-gradient(145deg, #fff3cf, #c29249)"
-            : "linear-gradient(145deg, #17120d, #030201)",
-          color: light ? "#111" : "#f4d493",
-          border: "2px solid #9a6328",
-          borderRadius: 10,
-          padding: "5px 9px",
-          minWidth: 90,
+            ? "linear-gradient(145deg, #fff4ca, #c99137 58%, #6f3d09)"
+            : "linear-gradient(145deg, #251811, #050302 70%, #000)",
+          color: light ? "#16100a" : "#f6d58b",
+          border: "3px solid #b47a2a",
+          borderRadius: 14,
+          padding: "7px 12px",
+          minWidth: 112,
+          minHeight: 58,
           textAlign: "center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.32), 0 7px 16px rgba(0,0,0,0.42)",
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: "bold" }}>{label}</div>
-        <div style={{ fontSize: "clamp(16px, 1.7vw, 21px)", fontWeight: "bold" }}>{value}</div>
+        <div style={{ fontSize: "clamp(13px, 1.15vw, 16px)", fontWeight: 900, letterSpacing: 1.2 }}>{shortLabel}</div>
+        <div style={{ fontSize: "clamp(26px, 2.45vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{value}</div>
       </div>
     );
   }
+
+  function CombinedPipPanel() {
+    return (
+      <div
+        style={{
+          background: "linear-gradient(145deg, #2b1a10, #050302 72%, #000)",
+          color: "#f6d58b",
+          border: "3px solid #b47a2a",
+          borderRadius: 16,
+          padding: "7px 12px",
+          minWidth: 220,
+          minHeight: 58,
+          textAlign: "center",
+          display: "grid",
+          gridTemplateColumns: "1fr 1px 1fr",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.32), 0 7px 16px rgba(0,0,0,0.42)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "clamp(14px, 1.2vw, 17px)", fontWeight: 900, letterSpacing: 1.4 }}>WHITE</div>
+          <div style={{ fontSize: "clamp(26px, 2.35vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{whitePipCount}</div>
+        </div>
+
+        <div
+          style={{
+            width: 1,
+            height: "80%",
+            background: "linear-gradient(180deg, transparent, #d6a847, transparent)",
+          }}
+        />
+
+        <div>
+          <div style={{ fontSize: "clamp(14px, 1.2vw, 17px)", fontWeight: 900, letterSpacing: 1.4 }}>BLACK</div>
+          <div style={{ fontSize: "clamp(26px, 2.35vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{blackPipCount}</div>
+        </div>
+      </div>
+    );
+  }
+
 
   function TrayCheckers({ player, count }: { player: Player; count: number }) {
     const checkerStyle = (index: number): React.CSSProperties => ({
@@ -1291,9 +1425,9 @@ export default function App() {
     return (
       <div
         style={{
-          width: "clamp(58px, 5vw, 76px)",
-          minWidth: 56,
-          borderRadius: 28,
+          width: "clamp(62px, 5vw, 74px)",
+          minWidth: 62,
+          borderRadius: 18,
           background: "linear-gradient(145deg, #5b3219, #1a0904)",
           border: "3px solid #7c461f",
           boxShadow: "inset 0 0 24px rgba(0,0,0,0.72), 0 8px 18px rgba(0,0,0,0.45)",
@@ -1308,10 +1442,10 @@ export default function App() {
           padding: "8px 4px",
         }}
       >
-        <div style={{ fontSize: 11 }}>{player.toUpperCase()}</div>
-        <div style={{ fontSize: 11, marginBottom: 4 }}>OFF</div>
+        <div style={{ fontSize: 12 }}>{player.toUpperCase()}</div>
+        <div style={{ fontSize: 12, marginBottom: 5 }}>OFF</div>
         <TrayCheckers player={player} count={off[player]} />
-        <div style={{ fontSize: 18, marginTop: 4 }}>{off[player]}</div>
+        <div style={{ fontSize: 30, marginTop: 6, lineHeight: 1, color: "#ffd77f" }}>{off[player]}</div>
       </div>
     );
   }
@@ -1319,32 +1453,46 @@ export default function App() {
   function CenterHinge() {
     return (
       <div
+        aria-label="Center bar"
         style={{
-          width: "clamp(40px, 3.4vw, 54px)",
-          minWidth: 40,
-          background: "linear-gradient(90deg, #241006, #9c632c, #241006)",
-          borderLeft: "2px solid rgba(255,210,120,0.35)",
+          width: "clamp(38px, 3vw, 48px)",
+          minWidth: 38,
+          background: "linear-gradient(90deg, #120804, #7a481f 35%, #b27937 50%, #7a481f 65%, #120804)",
+          borderLeft: "2px solid rgba(255,210,120,0.25)",
           borderRight: "2px solid rgba(0,0,0,0.65)",
-          boxShadow: "inset 0 0 18px rgba(0,0,0,0.72)",
+          boxShadow: "inset 0 0 20px rgba(0,0,0,0.78), 0 0 8px rgba(0,0,0,0.35)",
           display: "grid",
-          gridTemplateRows: "1fr auto 1fr",
+          gridTemplateRows: "1fr 1fr",
           alignItems: "center",
           justifyItems: "center",
-          color: "#f0c36f",
-          fontSize: 12,
           overflow: "hidden",
+          borderRadius: 4,
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 132 }}>
-          <div style={{ fontSize: 11, marginBottom: 2 }}>W BAR</div>
+        <div
+          style={{
+            width: "100%",
+            minHeight: 126,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderBottom: "1px solid rgba(0,0,0,0.35)",
+          }}
+        >
           <TrayCheckers player="White" count={bar.White} />
         </div>
 
-        <div style={{ width: "100%", height: 4, background: "#e0a34f" }} />
-
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 132 }}>
+        <div
+          style={{
+            width: "100%",
+            minHeight: 126,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderTop: "1px solid rgba(255,220,150,0.08)",
+          }}
+        >
           <TrayCheckers player="Black" count={bar.Black} />
-          <div style={{ fontSize: 11, marginTop: 2 }}>B BAR</div>
         </div>
       </div>
     );
@@ -1355,9 +1503,10 @@ export default function App() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(58px, 1fr))",
+          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
           gap: 0,
           minWidth: 0,
+          width: "100%",
         }}
       >
         {points.map((index) => renderPoint(index, isTop))}
@@ -1373,7 +1522,7 @@ export default function App() {
   const modeIsWar = mode === "WAR";
   const enemyControl = controlState === "ENEMY_CONTROL";
   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
-  const shellWidth = "min(100%, 1420px)";
+  const shellWidth = "min(92vw, 1060px)";
 
   const doctrineBannerText = enemyControl
     ? "ENEMY CONTROL"
@@ -1429,6 +1578,7 @@ export default function App() {
         padding: "clamp(8px, 1.2vw, 16px)",
         fontFamily: "Georgia, 'Times New Roman', serif",
         overflowX: "hidden",
+        maxWidth: "100vw",
       }}
     >
       <style>{`
@@ -1461,6 +1611,24 @@ export default function App() {
           15% { opacity: 1; }
           85% { opacity: 1; }
           100% { opacity: 0; }
+        }
+        @keyframes winSpectacle {
+          0% { opacity: 0; transform: scale(0.72) rotate(-2deg); }
+          14% { opacity: 1; transform: scale(1.06) rotate(1deg); }
+          28% { transform: scale(1) rotate(0deg); }
+          82% { opacity: 1; transform: scale(1.02); }
+          100% { opacity: 0; transform: scale(1.18); }
+        }
+        @keyframes sparkleFall {
+          0% { opacity: 0; transform: translateY(-20px) scale(0.2) rotate(0deg); }
+          20% { opacity: 1; }
+          100% { opacity: 0; transform: translateY(120px) scale(1) rotate(180deg); }
+        }
+        @keyframes doublesSuck {
+          0% { opacity: 0; transform: translateY(0) scale(0.82); }
+          14% { opacity: 1; transform: translateY(0) scale(1); }
+          64% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-34vh) translateX(-30vw) scale(0.18); }
         }
         @keyframes warPulse {
           0% { transform: scale(1); }
@@ -1517,27 +1685,56 @@ export default function App() {
             justifyContent: "center",
             zIndex: 9999,
             pointerEvents: "none",
-            animation: "cinematicFade 1.3s ease forwards",
+            animation: turnBanner.startsWith("DOUBLES - ") ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards" : turnBanner.includes("WINS") ? "winSpectacle 3s ease forwards" : "cinematicFade 1.3s ease forwards",
           }}
         >
           <div
             style={{
               padding: "24px 38px",
               borderRadius: 22,
-              background: enemyControl
-                ? "linear-gradient(145deg,#ffcc00,#ff6a00)"
-                : modeIsWar
-                ? "linear-gradient(145deg,#5f0000,#ff1a1a)"
-                : "linear-gradient(145deg,#003a8c,#39b7ff)",
+              background: turnBanner.includes("WAR")
+                ? "linear-gradient(145deg,#620000,#e51b1b)"
+                : turnBanner.includes("PEACE")
+                ? "linear-gradient(145deg,#003a8c,#2298e6)"
+                : turnBanner.includes("WINS")
+                ? "linear-gradient(135deg,#fff7c7 0%,#f4cf5e 22%,#b87816 48%,#fff0a8 66%,#6e3f08 100%)"
+                : "linear-gradient(145deg,#1b1207,#7b5524,#d4a14d)",
               color: "white",
-              fontSize: "clamp(30px,5vw,68px)",
+              fontSize: turnBanner.includes("DOUBLES") ? "clamp(17px,2.6vw,32px)" : turnBanner.includes("WINS OPENING ROLL") ? "clamp(20px,3vw,36px)" : "clamp(30px,5vw,68px)",
               fontWeight: 900,
               letterSpacing: 2,
               boxShadow: "0 20px 40px rgba(0,0,0,0.65)",
               textShadow: "0 3px 12px rgba(0,0,0,0.6)",
             }}
           >
-            {turnBanner}
+            {turnBanner.includes("WINS") ? (
+              <div style={{ position: "relative", minWidth: "clamp(240px, 36vw, 520px)", textAlign: "center", padding: "8px 16px" }}>
+                {Array.from({ length: 18 }).map((_, index) => (
+                  <span
+                    key={index}
+                    style={{
+                      position: "absolute",
+                      left: `${8 + ((index * 37) % 84)}%`,
+                      top: `${-24 + ((index * 19) % 22)}px`,
+                      fontSize: index % 3 === 0 ? "0.62em" : "0.42em",
+                      animation: `sparkleFall ${1.1 + (index % 5) * 0.18}s ease-in ${index * 0.035}s infinite`,
+                      color: index % 2 === 0 ? "#fff6b0" : "#ffffff",
+                    }}
+                  >
+                    ✦
+                  </span>
+                ))}
+                <div style={{ fontSize: "0.38em", letterSpacing: 3, marginBottom: 4 }}>VICTORY</div>
+                <div>{turnBanner}</div>
+              </div>
+            ) : turnBanner.startsWith("DOUBLES - ") ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
+                <span style={{ fontSize: "0.5em", letterSpacing: 1 }}>DOUBLES</span>
+                <span>{turnBanner.replace("DOUBLES - ", "")}</span>
+              </div>
+            ) : (
+              turnBanner
+            )}
           </div>
         </div>
       )}
@@ -1546,7 +1743,7 @@ export default function App() {
         style={{
           width: shellWidth,
           margin: "0 auto clamp(6px, 0.8vw, 10px)",
-          fontSize: "clamp(26px, 2.8vw, 42px)",
+          fontSize: "clamp(25px, 2.55vw, 38px)",
           letterSpacing: 0.4,
           textShadow: "0 3px 8px rgba(0,0,0,0.7)",
           color: "#f0cf8a",
@@ -1560,8 +1757,8 @@ export default function App() {
           width: shellWidth,
           margin: "0 auto clamp(7px, 0.8vw, 10px)",
           display: "grid",
-          gridTemplateColumns: "1.3fr 0.85fr 0.9fr 0.9fr 0.95fr",
-          gap: 10,
+          gridTemplateColumns: "1.18fr 0.7fr 1.05fr 0.72fr 0.5fr",
+          gap: 6,
           alignItems: "stretch",
         }}
       >
@@ -1573,12 +1770,12 @@ export default function App() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            minHeight: 46,
+            minHeight: 58,
             fontSize: enemyControl
-              ? "clamp(12px, 1.4vw, 16px)"
+              ? "clamp(13px, 1.45vw, 17px)"
               : neutralModeState
-              ? "clamp(14px, 1.8vw, 22px)"
-              : "clamp(21px, 2.4vw, 30px)",
+              ? "clamp(18px, 2.2vw, 28px)"
+              : "clamp(30px, 3.8vw, 54px)",
             fontWeight: "900",
             color: enemyControl || neutralModeState ? "#1b0b00" : "white",
             textAlign: "center",
@@ -1595,10 +1792,10 @@ export default function App() {
           style={{
             background: "linear-gradient(145deg, #17120d, #030201)",
             border: "2px solid #9a6328",
-            borderRadius: 12,
+            borderRadius: 16,
             padding: 4,
             textAlign: "center",
-            minHeight: 46,
+            minHeight: 58,
           }}
         >
           <div style={{ fontWeight: "bold", marginBottom: 1, fontSize: 9 }}>DICE</div>
@@ -1607,20 +1804,21 @@ export default function App() {
               display: "flex",
               justifyContent: "center",
               animation: diceRolling ? "diceShake 0.6s infinite" : "none",
+              minHeight: 66,
+              alignItems: "center",
             }}
           >
             {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index)) : "-"}
           </div>
         </div>
 
-        <PipPanel label="WHITE PIPS" value={whitePipCount} light />
-        <PipPanel label="BLACK PIPS" value={blackPipCount} />
+        <CombinedPipPanel />
 
         <div
           style={{
             background: enemyControl ? "linear-gradient(145deg, #3b1f00, #ff9a00)" : "linear-gradient(145deg, #17120d, #030201)",
             border: enemyControl ? "3px solid #ffd000" : "2px solid #6f4a22",
-            borderRadius: 12,
+            borderRadius: 16,
             padding: 5,
             textAlign: "center",
             color: enemyControl ? "#fff7c0" : "white",
@@ -1628,9 +1826,9 @@ export default function App() {
           }}
         >
           <div style={{ fontSize: 9 }}>TURN</div>
-          <div style={{ fontSize: "clamp(14px, 1.55vw, 18px)", fontWeight: "bold" }}>{currentPlayer}</div>
+          <div style={{ fontSize: "clamp(17px, 1.75vw, 22px)", fontWeight: "bold" }}>{currentPlayer}</div>
           <div style={{ fontSize: 9 }}>CONTROLLER</div>
-          <div style={{ fontSize: "clamp(13px, 1.45vw, 17px)", fontWeight: "bold" }}>{controller}</div>
+          <div style={{ fontSize: "clamp(16px, 1.65vw, 20px)", fontWeight: "bold" }}>{controller}</div>
         </div>
       </div>
 
@@ -1642,6 +1840,7 @@ export default function App() {
           gap: 6,
           flexWrap: "wrap",
           justifyContent: "center",
+          alignItems: "center",
         }}
       >
         <button
@@ -1684,7 +1883,7 @@ export default function App() {
         )}
 
         <button style={luxuryButton} onClick={undoMove}>Undo</button>
-        <button style={luxuryButton} onClick={submitTurn}>Submit</button>
+        <button style={luxuryButton} onClick={submitTurn}>End Turn</button>
       </div>
 
       <div
@@ -1695,13 +1894,13 @@ export default function App() {
           fontWeight: 700,
         }}
       >
-        {message}
+        {winner ? `${winner} wins! Game over.` : message}
         {canChooseDoctrine && (
           <div
             style={{
               marginTop: 8,
               display: "flex",
-              gap: 10,
+              gap: 6,
               justifyContent: "center",
               alignItems: "center",
               flexWrap: "wrap",
@@ -1742,27 +1941,25 @@ export default function App() {
           width: shellWidth,
           margin: "0 auto clamp(10px, 1vw, 14px)",
           background: "linear-gradient(145deg, #5a3218, #2a1207 58%, #120603)",
-          padding: 16,
-          borderRadius: 30,
-          border: "14px solid #2a1408",
+          padding: 8,
+          borderRadius: 24,
+          border: "7px solid #2a1408",
           boxShadow: "inset 0 0 0 2px rgba(231,160,72,0.24), inset 0 0 38px rgba(0,0,0,0.65), 0 24px 52px rgba(0,0,0,0.72)",
         }}
       >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "70px minmax(0, 1fr) 48px minmax(0, 1fr) 70px",
-            gap: 10,
+            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 74px",
+            gap: 6,
           }}
         >
-          <SideTray player="White" />
-
           <div
             style={{
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "10px 8px 0",
+              padding: "7px 5px 0",
             }}
           >
             <PointQuadrant points={topLeftRow} isTop={true} />
@@ -1775,48 +1972,40 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "10px 8px 0"
+              padding: "7px 5px 0"
             }}
           >
             <PointQuadrant points={topRightRow} isTop={true} />
           </div>
 
-          <SideTray player="Black" />
+          <SideTray player="White" />
         </div>
 
         <div
+          aria-hidden="true"
           style={{
-            height: 42,
-            margin: "8px 0",
-            borderRadius: 14,
-            background: "linear-gradient(90deg, #050704, #172714, #050704)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-around",
-            fontWeight: 700,
-            border: "1px solid rgba(255,210,130,0.16)",
+            height: 12,
+            margin: "5px 0",
+            borderRadius: 10,
+            background: "linear-gradient(90deg, rgba(0,0,0,0.86), rgba(26,38,20,0.95), rgba(0,0,0,0.86))",
+            border: "1px solid rgba(255,210,130,0.12)",
+            boxShadow: "inset 0 1px 0 rgba(255,220,150,0.06), 0 2px 6px rgba(0,0,0,0.36)",
           }}
-        >
-          <div style={{ fontSize: 13 }}>White Off: {off.White}</div>
-          <div style={{ fontSize: 13 }}>Center bar holds hit checkers</div>
-          <div style={{ fontSize: 13 }}>Black Off: {off.Black}</div>
-        </div>
+        />
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "70px minmax(0, 1fr) 48px minmax(0, 1fr) 70px",
-            gap: 10,
+            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 74px",
+            gap: 6,
           }}
         >
-          <SideTray player="White" />
-
           <div
             style={{
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 8px 10px"
+              padding: "0 5px 7px"
             }}
           >
             <PointQuadrant points={bottomLeftRow} isTop={false} />
@@ -1829,7 +2018,7 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 8px 10px"
+              padding: "0 5px 7px"
             }}
           >
             <PointQuadrant points={bottomRightRow} isTop={false} />
@@ -1839,218 +2028,19 @@ export default function App() {
         </div>
       </div>
 
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(10px, 1vw, 14px)",
-          background: "rgba(0,0,0,0.25)",
-          border: "1px solid #6f4a22",
-          borderRadius: 12,
-          overflow: "hidden",
-        }}
-      >
-        <button
-          onClick={() => setShowMoveLog((value) => !value)}
-          style={{
-            width: "100%",
-            textAlign: "left",
-            padding: "10px 12px",
-            background: "rgba(0,0,0,0.35)",
-            color: "white",
-            border: "none",
-            cursor: "pointer",
-            fontWeight: "bold",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Move History (Optional Debug Panel)</span>
-          <span>{showMoveLog ? "▲" : "▼"}</span>
-        </button>
-
+      <div style={{ display: "none" }}>
         {showMoveLog && moveLog.length > 0 && (
-          <div style={{ padding: 10, maxHeight: "clamp(92px, 18vh, 170px)", overflowY: "auto" }}>
-            {moveLog.length === 0 ? (
-              <div style={{ color: "#f4d493", fontSize: 13 }}>No moves recorded yet.</div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 6 }}>
-                {moveLog.map((entry) => (
-                  <div
-                    key={entry.id}
-                    style={{
-                      background: entry.controlState === "ENEMY_CONTROL" ? "rgba(255, 174, 0, 0.16)" : "rgba(0,0,0,0.28)",
-                      border: entry.move.isHit ? "1px solid #ff4b4b" : "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8,
-                      padding: "6px 8px",
-                      fontSize: 12,
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    <div style={{ fontWeight: "bold" }}>{formatMoveLogEntry(entry)}</div>
-                    <div style={{ color: "#f4d493" }}>
-                      Controller: {entry.controller} | Dice left: {entry.remainingDiceAfter.length ? entry.remainingDiceAfter.join(", ") : "none"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div>
+            {moveLog.map((entry) => (
+              <div key={entry.id}>{formatMoveLogEntry(entry)}</div>
+            ))}
           </div>
         )}
-      </div>
-
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto",
-          background: enemyControl ? "rgba(255, 174, 0, 0.14)" : "rgba(0,0,0,0.25)",
-          border: enemyControl ? "2px solid #ffd000" : "1px solid #6f4a22",
-          borderRadius: 12,
-          overflow: "hidden",
-        }}
-      >
-        <button
-          onClick={() => setShowAnalysis((value) => !value)}
-          style={{
-            width: "100%",
-            textAlign: "left",
-            padding: "10px 12px",
-            background: "rgba(0,0,0,0.35)",
-            color: "white",
-            border: "none",
-            cursor: "pointer",
-            fontWeight: "bold",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Rules, Legal Analysis & Forced-Sequence Visualizer</span>
-          <span>{showAnalysis ? "▲" : "▼"}</span>
-        </button>
-
         {showAnalysis && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: 12,
-              padding: 12,
-            }}
-          >
-            <div
-              style={{
-                background: enemyControl ? "rgba(255, 174, 0, 0.18)" : "rgba(0,0,0,0.25)",
-                border: enemyControl ? "2px solid #ffd000" : "1px solid #6f4a22",
-                borderRadius: 12,
-                padding: 10,
-              }}
-            >
-              <div style={{ fontWeight: "bold", marginBottom: 6 }}>RULE STATUS</div>
-              <div>
-                Mode: <strong>{neutralModeState ? "UNDECIDED" : mode}</strong> | Control: <strong>{controlState}</strong>
-              </div>
-              {enemyControl && (
-                <div style={{ color: "#ffd86b", fontWeight: "bold", marginTop: 6 }}>
-                  Enemy controller may make any legal backgammon move. WAR/PEACE tactical filters are off until the turn ends.
-                </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                background: "rgba(0,0,0,0.25)",
-                border: "1px solid #6f4a22",
-                borderRadius: 12,
-                padding: 10,
-              }}
-            >
-              <div style={{ fontWeight: "bold", marginBottom: 6 }}>LEGAL ANALYSIS</div>
-              {legalAnalysis.explanation.map((line, index) => (
-                <div key={index} style={{ fontSize: 13, marginBottom: 3 }}>
-                  - {line}
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                background: "rgba(0,0,0,0.25)",
-                border: "1px solid #6f4a22",
-                borderRadius: 12,
-                padding: 10,
-                gridColumn: "1 / -1",
-              }}
-            >
-              <div style={{ fontWeight: "bold", marginBottom: 6 }}>FORCED-SEQUENCE VISUALIZER</div>
-              {legalAnalysis.legalSequences.length === 0 ? (
-                <div style={{ fontSize: 13 }}>No legal sequence to preview.</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12, color: "#f4d493", marginBottom: 6 }}>
-                    Legal first moves are shown below. Hover or click to preview the complete forced sequence tree.
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                      gap: 6,
-                      maxHeight: "clamp(96px, 18vh, 160px)",
-                      overflowY: "auto",
-                      paddingRight: 4,
-                    }}
-                  >
-                    {legalMoves.map((move) => {
-                      const key = moveKey(move);
-                      const related = legalAnalysis.legalSequences.filter((sequence) => {
-                        const first = sequence.moves[0];
-                        return first && moveKey(first) === key;
-                      });
-                      const selected = previewMoveKey === key;
-
-                      return (
-                        <button
-                          key={key}
-                          onMouseEnter={() => setPreviewMoveKey(key)}
-                          onClick={() => {
-                            setPreviewMoveKey(key);
-                            setSelectedPoint(move.from >= 0 ? move.from : null);
-                          }}
-                          style={{
-                            textAlign: "left",
-                            borderRadius: 8,
-                            border: selected ? "2px solid #4cff4c" : "1px solid #6f4a22",
-                            background: selected ? "rgba(76,255,76,0.18)" : "rgba(0,0,0,0.35)",
-                            color: "white",
-                            padding: "6px 8px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div style={{ fontWeight: "bold", fontSize: 12 }}>{describeMove(move)}</div>
-                          <div style={{ fontSize: 11, color: "#f4d493" }}>
-                            Opens {related.length} legal continuation{related.length === 1 ? "" : "s"}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {previewSequences.length > 0 && (
-                    <div style={{ marginTop: 8, background: "rgba(0,0,0,0.35)", borderRadius: 8, padding: 8 }}>
-                      <div style={{ fontWeight: "bold", marginBottom: 5 }}>Previewed Continuations</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "clamp(72px, 14vh, 120px)", overflowY: "auto" }}>
-                        {previewSequences.map((sequence, index) => (
-                          <div key={index} style={{ fontSize: 12, lineHeight: 1.35 }}>
-                            <div style={{ color: "#f4d493" }}>{describeSequenceStats(sequence)}</div>
-                            <div>{describeSequence(sequence)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+          <div>
+            {legalAnalysis.explanation.map((line, index) => (
+              <div key={index}>{line}</div>
+            ))}
           </div>
         )}
       </div>
