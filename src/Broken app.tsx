@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from "react";
 type Player = "White" | "Black";
 type Mode = "WAR" | "PEACE";
 type ControlState = "NORMAL" | "ENEMY_CONTROL";
-type GamePhase = "OPENING_ROLL" | "MODE_CHOICE" | "OPENING_TURN" | "NORMAL_TURN" | "GAME_OVER";
 
 type Point = {
   owner: Player | null;
@@ -61,7 +60,6 @@ type Snapshot = {
   controlState: ControlState;
   moveLog: MoveLogEntry[];
   lastMove: Move | null;
-  turnMoveCount: number;
 };
 
 const HOME_BAR: BarState = { White: 0, Black: 0 };
@@ -483,34 +481,6 @@ function playClickSound(): void {
   oscillator.stop(ctx.currentTime + 0.08);
 }
 
-function playErrorSound(): void {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const ctx = new AudioContextClass();
-  const first = ctx.createOscillator();
-  const second = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  first.type = "square";
-  second.type = "sawtooth";
-  first.frequency.setValueAtTime(160, ctx.currentTime);
-  first.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.18);
-  second.frequency.setValueAtTime(120, ctx.currentTime);
-  second.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.18);
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.09, ctx.currentTime + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-
-  first.connect(gain);
-  second.connect(gain);
-  gain.connect(ctx.destination);
-  first.start();
-  second.start();
-  first.stop(ctx.currentTime + 0.22);
-  second.stop(ctx.currentTime + 0.22);
-}
-
 
 function playWinFanfare(): void {
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -614,7 +584,6 @@ export default function App() {
   const [currentPlayer, setCurrentPlayer] = useState<Player>("White");
   const [controller, setController] = useState<Player>("White");
   const [controlState, setControlState] = useState<ControlState>("NORMAL");
-  const [gamePhase, setGamePhase] = useState<GamePhase>("OPENING_ROLL");
   const [remainingDice, setRemainingDice] = useState<number[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
   const [draggingPoint, setDraggingPoint] = useState<number | null>(null);
@@ -625,7 +594,6 @@ export default function App() {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [showMoveLog, setShowMoveLog] = useState(true);
   const [moveLog, setMoveLog] = useState<MoveLogEntry[]>([]);
-  const [turnMoveCount, setTurnMoveCount] = useState(0);
   const [turnBanner, setTurnBanner] = useState<string | null>(null);
   const [diceRolling, setDiceRolling] = useState(false);
   const [animatingMoveKey, setAnimatingMoveKey] = useState<string | null>(null);
@@ -634,13 +602,9 @@ export default function App() {
   const [openingDice, setOpeningDice] = useState<number[] | null>(null);
   const [openingWinner, setOpeningWinner] = useState<Player | null>(null);
   const [awaitingModeChoice, setAwaitingModeChoice] = useState(false);
-  const [openingTurnMoveMade, setOpeningTurnMoveMade] = useState(false);
-  const [openingTurnRequiresMove, setOpeningTurnRequiresMove] = useState(false);
   const [winner, setWinner] = useState<Player | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
-  const [legalHelpActive, setLegalHelpActive] = useState(false);
-  const [assistSourcePoint, setAssistSourcePoint] = useState<number | null>(null);
+  const [warningMessage, setWarningMessage] = useState("");
 
   useEffect(() => {
     console.table(runEngineSelfTests().map((result) => ({ result })));
@@ -652,37 +616,6 @@ export default function App() {
   );
 
   const legalMoves = legalAnalysis.legalMoves;
-  const legalOriginPoints = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          legalMoves
-            .filter((move) => !move.isBarEntry)
-            .map((move) => move.from)
-        )
-      ),
-    [legalMoves]
-  );
-  const turnGuidance = useMemo(() => {
-    if (winner !== null || awaitingModeChoice || remainingDice.length === 0) return null;
-
-    if (bar[currentPlayer] > 0 && legalMoves.some((move) => move.isBarEntry)) {
-      return "Bar entry required.";
-    }
-
-    if (legalMoves.length === 1) {
-      return "Only legal move available.";
-    }
-
-    const availableDice = uniqueDice(remainingDice);
-    const legalDice = uniqueDice(legalMoves.map((move) => move.die));
-
-    if (availableDice.length > 1 && legalDice.length === 1 && legalDice[0] === availableDice[0]) {
-      return `Must use ${legalDice[0]} first.`;
-    }
-
-    return null;
-  }, [awaitingModeChoice, bar, currentPlayer, legalMoves, remainingDice, winner]);
   const previewSequences = previewMoveKey
     ? legalAnalysis.legalSequences.filter((sequence) => {
         const first = sequence.moves[0];
@@ -691,19 +624,9 @@ export default function App() {
     : [];
 
   const displayDice = remainingDice.length > 0 ? remainingDice : openingDice ?? [];
-  const canChooseDoctrine = gamePhase === "MODE_CHOICE" && awaitingModeChoice && openingDice !== null && openingWinner !== null;
-  const canRollOpening = !diceRolling && gamePhase === "OPENING_ROLL";
-  const turnIsPlayable = gamePhase === "OPENING_TURN" || gamePhase === "NORMAL_TURN";
-  const canSubmitTurn =
-    !winner &&
-    !diceRolling &&
-    turnIsPlayable &&
-    !awaitingModeChoice &&
-    (
-      (turnMoveCount > 0 && (remainingDice.length === 0 || legalMoves.length === 0)) ||
-      (turnMoveCount === 0 && remainingDice.length > 0 && legalMoves.length === 0)
-    );
-  const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
+  const canChooseDoctrine = awaitingModeChoice && openingDice !== null && openingWinner !== null;
+  const gameInProgress = remainingDice.length > 0 || moveLog.length > 0;
+  const canRollOpening = !diceRolling && !awaitingModeChoice && !gameInProgress;
   const whitePipCount = calculatePipCount(board, "White", bar);
   const blackPipCount = calculatePipCount(board, "Black", bar);
 
@@ -723,21 +646,42 @@ export default function App() {
     setTimeout(() => setTurnBanner(null), duration);
   }
 
-  function flashWarning(text = "Not permitted — must make a legal move.", duration = 1800): void {
-    setWarningMessage(text);
-    setTimeout(() => setWarningMessage(null), duration);
+  function playWarningBuzz(): void {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const ctx = new AudioContextClass();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(140, ctx.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.18);
+
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.22);
+    } catch {
+      // Browser audio may be blocked until user interaction. Ignore safely.
+    }
   }
 
-  function showLegalMoveHelp(sourcePoint: number | null = selectedPoint): void {
-    playErrorSound();
-    flashWarning();
-    setAssistSourcePoint(sourcePoint);
-    setLegalHelpActive(true);
-    setTimeout(() => {
-      setLegalHelpActive(false);
-      setAssistSourcePoint(null);
-    }, 2200);
+  function showIllegalMoveWarning(): void {
+    playWarningBuzz();
+    setWarningMessage("Not permitted — must make a legal move.");
+    setMessage("Not permitted — must make a legal move.");
+
+    window.setTimeout(() => {
+      setWarningMessage("");
+    }, 1700);
   }
+
 
   function checkForWinner(nextOff: OffState): Player | null {
     if (nextOff.White >= 15) return "White";
@@ -757,7 +701,6 @@ export default function App() {
     setHoverPoint(null);
     setDragPosition(null);
     setConfirmResign(false);
-    setGamePhase("GAME_OVER");
   }
 
   function resignGame(): void {
@@ -766,7 +709,7 @@ export default function App() {
       return;
     }
 
-    if (!canResign) {
+    if (!gameInProgress && !awaitingModeChoice) {
       setMessage("No active game to resign.");
       setConfirmResign(false);
       return;
@@ -783,10 +726,10 @@ export default function App() {
 
   async function rollOpening(): Promise<void> {
     if (!canRollOpening) {
-      if (gamePhase === "MODE_CHOICE") {
+      if (awaitingModeChoice) {
         setMessage("Choose WAR or PEACE before rolling again.");
-      } else {
-        setMessage("Opening dice have already been rolled for this game.");
+      } else if (gameInProgress) {
+        setMessage("Game already started. Finish or reset before rolling opening dice again.");
       }
       return;
     }
@@ -815,13 +758,9 @@ export default function App() {
     setLastMove(null);
     setHistory([]);
     setMoveLog([]);
-    setTurnMoveCount(0);
     setOpeningDice([whiteDie, blackDie]);
     setOpeningWinner(winner);
     setAwaitingModeChoice(true);
-    setGamePhase("MODE_CHOICE");
-    setOpeningTurnMoveMade(false);
-    setOpeningTurnRequiresMove(false);
     playWinFanfare();
     flashBanner(`${winner.toUpperCase()} WINS OPENING ROLL`, 3500);
     setMessage(`Opening roll - White: ${whiteDie}, Black: ${blackDie}. ${winner} chooses WAR or PEACE.`);
@@ -846,13 +785,9 @@ export default function App() {
     setLastMove(null);
     setHistory([]);
     setMoveLog([]);
-    setTurnMoveCount(0);
     setOpeningDice(null);
     setOpeningWinner(null);
     setAwaitingModeChoice(false);
-    setOpeningTurnMoveMade(true);
-    setOpeningTurnRequiresMove(false);
-    setGamePhase("NORMAL_TURN");
     setMessage("BEAR-OFF TEST: White should bear off as many as possible.");
   }
 
@@ -876,13 +811,9 @@ export default function App() {
     setLastMove(null);
     setHistory([]);
     setMoveLog([]);
-    setTurnMoveCount(0);
     setOpeningDice(null);
     setOpeningWinner(null);
     setAwaitingModeChoice(false);
-    setOpeningTurnMoveMade(true);
-    setOpeningTurnRequiresMove(false);
-    setGamePhase("NORMAL_TURN");
     setMessage("PEACE TEST: no-hit sequence should be preferred if available.");
   }
 
@@ -898,35 +829,20 @@ export default function App() {
     setControlState("NORMAL");
     setRemainingDice(openingDice);
     setAwaitingModeChoice(false);
-    setGamePhase("OPENING_TURN");
-    setOpeningTurnMoveMade(false);
-    setOpeningTurnRequiresMove(true);
     setHistory([]);
     setMoveLog([]);
-    setTurnMoveCount(0);
     setSelectedPoint(null);
     setPreviewMoveKey(null);
     flashBanner(chosenMode);
-    setMessage(`${openingWinner} chose ${chosenMode}. Opening turn uses the opening dice ${openingDice.join(", ")}. Select a ${openingWinner} checker, then select a legal destination.`);
+    setMessage(`${openingWinner} chose ${chosenMode}. Opening turn begins. Select a ${openingWinner} checker, then select a legal destination.`);
   }
 
   async function nextTurn(): Promise<void> {
     await animateDiceRoll();
 
     const nextPlayer = opponent(currentPlayer);
-    let d1 = rollDie();
-    let d2 = rollDie();
-
-    // Safety guard: the first playable turn must use the original non-double opening dice.
-    // If the first transition somehow reaches a new roll before any move is logged,
-    // do not allow that first playable roll to become doubles.
-    if (openingDice !== null && moveLog.length === 0) {
-      while (d1 === d2) {
-        d1 = rollDie();
-        d2 = rollDie();
-      }
-    }
-
+    const d1 = rollDie();
+    const d2 = rollDie();
     let dice: number[];
     let nextMode = mode;
 
@@ -940,14 +856,11 @@ export default function App() {
     }
 
     setCurrentPlayer(nextPlayer);
-    setGamePhase("NORMAL_TURN");
     setController(nextPlayer);
     setControlState("NORMAL");
     setRemainingDice(dice);
     setOpeningDice(null);
     setOpeningWinner(null);
-    setOpeningTurnMoveMade(false);
-    setOpeningTurnRequiresMove(false);
     setSelectedPoint(null);
     setPreviewMoveKey(null);
     setLastMove(null);
@@ -966,9 +879,6 @@ export default function App() {
     setController(previous.controller);
     setControlState(previous.controlState);
     setMoveLog(previous.moveLog);
-    setTurnMoveCount(previous.turnMoveCount);
-    setOpeningTurnMoveMade(!(openingDice !== null && previous.moveLog.length === 0));
-    setOpeningTurnRequiresMove(openingDice !== null && previous.moveLog.length === 0);
     setLastMove(previous.lastMove);
     setHistory((currentHistory) => currentHistory.slice(0, -1));
     setSelectedPoint(null);
@@ -977,37 +887,6 @@ export default function App() {
   }
 
   function submitTurn(): void {
-    if (gamePhase === "OPENING_ROLL") {
-      setMessage("Roll opening dice first.");
-      return;
-    }
-
-    if (gamePhase === "MODE_CHOICE" || awaitingModeChoice) {
-      setMessage("Choose WAR or PEACE before ending a turn.");
-      return;
-    }
-
-    if (gamePhase === "OPENING_TURN" && turnMoveCount === 0 && legalMoves.length > 0) {
-      setMessage("Make the first opening move before ending the turn.");
-      return;
-    }
-
-    if (!turnIsPlayable) {
-      setMessage("End Turn is not available yet.");
-      return;
-    }
-
-    if (!canSubmitTurn) {
-      if (turnMoveCount === 0 && legalMoves.length > 0) {
-        setMessage("Make at least one legal move before ending the turn.");
-      } else if (remainingDice.length > 0 && legalMoves.length > 0) {
-        setMessage("Use remaining legal moves or undo before submitting.");
-      } else {
-        setMessage("End Turn is not available yet.");
-      }
-      return;
-    }
-
     const completedWinner = winner ?? checkForWinner(off);
     if (completedWinner) {
       if (winner === null) endGame(completedWinner);
@@ -1015,6 +894,10 @@ export default function App() {
       return;
     }
 
+    if (remainingDice.length > 0 && legalMoves.length > 0) {
+      setMessage("Use remaining legal moves or undo before submitting.");
+      return;
+    }
     void nextTurn();
   }
 
@@ -1030,7 +913,6 @@ export default function App() {
         controlState,
         moveLog: [...moveLog],
         lastMove,
-        turnMoveCount,
       },
     ]);
 
@@ -1067,18 +949,12 @@ export default function App() {
         remainingDiceAfter: nextDice,
       },
     ]);
-    setTurnMoveCount((count) => count + 1);
     setBoard(result.board);
     setBar(result.bar);
     setOff(result.off);
     setRemainingDice(nextDice);
     setSelectedPoint(null);
     setPreviewMoveKey(null);
-    setWarningMessage(null);
-    setLegalHelpActive(false);
-    setAssistSourcePoint(null);
-    setOpeningTurnMoveMade(true);
-    setOpeningTurnRequiresMove(false);
     setController(nextController);
     setControlState(nextControlState);
     playClickSound();
@@ -1144,16 +1020,13 @@ export default function App() {
       return candidate.from === draggingPoint && candidate.to === dropIndex;
     });
 
-    const sourcePoint = draggingPoint;
     setDraggingPoint(null);
     setHoverPoint(null);
     setDragPosition(null);
 
     if (!move) {
-      setSelectedPoint(sourcePoint);
-      setPreviewMoveKey(null);
-      showLegalMoveHelp(sourcePoint);
-      setMessage("Not permitted — must make a legal move.");
+      setSelectedPoint(null);
+      showIllegalMoveWarning();
       return;
     }
 
@@ -1199,8 +1072,7 @@ export default function App() {
     if (bar[currentPlayer] > 0) {
       const barMove = legalMoves.find((move) => move.isBarEntry && move.to === index);
       if (!barMove) {
-        showLegalMoveHelp(null);
-        setMessage("Bar entry required.");
+        setMessage(`${currentPlayer} must enter from the bar.`);
         return;
       }
       executeMove(barMove);
@@ -1209,18 +1081,12 @@ export default function App() {
 
     if (selectedPoint === null) {
       const point = board[index];
-      const hasLegalMoveFromPoint = legalMoves.some((move) => !move.isBarEntry && move.from === index);
-
-      if (point.owner !== currentPlayer || !hasLegalMoveFromPoint) {
-        showLegalMoveHelp(null);
-        setMessage(`It is ${currentPlayer}'s turn. Select a highlighted ${currentPlayer} checker.`);
+      if (point.owner !== currentPlayer) {
+        setMessage(`It is ${currentPlayer}'s turn. Select a ${currentPlayer} checker first.`);
         return;
       }
       setSelectedPoint(index);
-      setAssistSourcePoint(index);
-      setLegalHelpActive(false);
       setPreviewMoveKey(null);
-      setWarningMessage(null);
       playClickSound();
       setMessage(`Selected point ${index + 1}. Now select a highlighted legal destination.`);
       return;
@@ -1232,47 +1098,20 @@ export default function App() {
     });
 
     if (!move) {
+      setSelectedPoint(null);
       setPreviewMoveKey(null);
-      showLegalMoveHelp(selectedPoint);
-      setMessage("Not permitted — must make a legal move.");
+      setMessage("Illegal move. Select one of the highlighted legal destinations.");
       return;
     }
 
     executeMove(move);
   }
 
-  function handleBearOffTrayClick(player: Player): void {
-    if (player !== currentPlayer || remainingDice.length === 0 || awaitingModeChoice || winner !== null) return;
-
-    const bearOffMove = selectedPoint === null
-      ? null
-      : legalMoves.find((move) => move.isBearOff && move.from === selectedPoint);
-
-    if (!bearOffMove) {
-      showLegalMoveHelp(selectedPoint);
-      setMessage("Select a highlighted checker that can bear off.");
-      return;
-    }
-
-    executeMove(bearOffMove);
-  }
-
-  function getDieOwnerForDisplay(value: number, index: number): Player {
-    if (openingDice !== null) {
-      if (awaitingModeChoice) return index === 0 ? "White" : "Black";
-
-      // During the opening player's first turn, keep the original opening dice visually distinct:
-      // White's opening die remains white; Black's opening die remains black.
-      if (value === openingDice[0]) return "White";
-      if (value === openingDice[1]) return "Black";
-    }
-
-    return currentPlayer;
-  }
-
-  function renderDie(value: number, index: number) {
-    const dieOwner = getDieOwnerForDisplay(value, index);
-
+  function renderDie(value: number, index: number, diceOwner: Player = controller) {
+    const dieIsBlack = diceOwner === "Black";
+    const dieFace = dieIsBlack ? "linear-gradient(145deg, #050505, #2c2c2c 58%, #000)" : "linear-gradient(145deg, #fffdf2, #e6dfc9 60%, #b9ad91)";
+    const diePip = dieIsBlack ? "#ffffff" : "#050505";
+    const dieBorder = dieIsBlack ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.18)";
     const dotPositions: Record<number, string[]> = {
       1: ["center"],
       2: ["top-left", "bottom-right"],
@@ -1299,18 +1138,9 @@ export default function App() {
           width: 44,
           height: 44,
           borderRadius: 16,
-          background:
-            dieOwner === "Black"
-              ? "linear-gradient(145deg, #343434, #050505 72%, #000)"
-              : "linear-gradient(145deg, #fff9df, #d0bd8d)",
-          border:
-            dieOwner === "Black"
-              ? "2px solid #111"
-              : "2px solid #ead9a8",
+          background: "linear-gradient(145deg, #fff9df, #d0bd8d)",
           boxShadow:
-            dieOwner === "Black"
-              ? "inset -5px -5px 9px rgba(0,0,0,0.5), inset 4px 4px 7px rgba(255,255,255,0.16), 0 4px 10px rgba(0,0,0,0.5)"
-              : "inset -5px -5px 9px rgba(0,0,0,0.24), inset 4px 4px 7px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.5)",
+            "inset -5px -5px 9px rgba(0,0,0,0.24), inset 4px 4px 7px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.5)",
           position: "relative",
           marginRight: 10,
         }}
@@ -1322,10 +1152,7 @@ export default function App() {
               width: 7,
               height: 7,
               borderRadius: "50%",
-              background:
-                dieOwner === "Black"
-                  ? "#f7f1df"
-                  : "#111",
+              background: "#111",
               position: "absolute",
               ...positions[position],
             }}
@@ -1391,32 +1218,23 @@ export default function App() {
     const isSelected = selectedPoint === index;
     const isDraggingOrigin = draggingPoint === index;
     const isDragHover = hoverPoint === index;
-    const legalOrigins = legalOriginPoints;
+    const legalOrigins = Array.from(
+      new Set(
+        legalMoves
+          .filter((move) => !move.isBarEntry)
+          .map((move) => move.from)
+      )
+    );
     const isLegalOrigin = selectedPoint === null && legalOrigins.includes(index);
-    const activeSource = draggingPoint ?? selectedPoint ?? assistSourcePoint;
+    const activeSource = draggingPoint ?? selectedPoint;
     const legalDestinations =
       bar[currentPlayer] > 0
         ? legalMoves.filter((move) => move.isBarEntry).map((move) => move.to)
-        : activeSource !== null
-        ? legalMoves
+        : legalMoves
             .filter((move) => move.from === activeSource)
-            .map((move) => (move.isBearOff ? activeSource : move.to))
-        : legalHelpActive
-        ? legalMoves.map((move) => (move.isBearOff ? move.from : move.to))
-        : [];
+            .map((move) => (move.isBearOff ? activeSource! : move.to));
 
     const isLegalDestination = legalDestinations.includes(index);
-    const legalDestinationMove = legalMoves.find((move) => {
-      if (bar[currentPlayer] > 0) return move.isBarEntry && move.to === index;
-      if (activeSource !== null) {
-        if (move.isBearOff) return move.from === activeSource && index === activeSource;
-        return move.from === activeSource && move.to === index;
-      }
-      if (!legalHelpActive) return false;
-      if (move.isBearOff) return move.from === index;
-      return move.to === index;
-    });
-    const isBearOffDestination = !!legalDestinationMove?.isBearOff;
     const triangleColor =
       index % 2 === 0
         ? "linear-gradient(180deg, #ead7a1 0%, #c9a05b 56%, #7b5a24 100%)"
@@ -1473,13 +1291,9 @@ export default function App() {
               : isSelected
               ? "0 0 0 4px rgba(76,255,76,0.98), 0 0 24px rgba(76,255,76,0.75)"
               : isLegalDestination
-              ? legalHelpActive
-                ? "0 0 0 6px rgba(0,255,200,1), 0 0 34px rgba(0,220,255,0.95)"
-                : "0 0 0 4px rgba(0,200,255,0.98), 0 0 24px rgba(0,200,255,0.75)"
+              ? "0 0 0 4px rgba(0,200,255,0.98), 0 0 24px rgba(0,200,255,0.75)"
               : isLegalOrigin
-              ? legalHelpActive
-                ? "0 0 0 5px rgba(255,235,80,1), 0 0 30px rgba(255,215,0,0.9)"
-                : "0 0 0 3px rgba(255,215,0,0.95), 0 0 20px rgba(255,215,0,0.7)"
+              ? "0 0 0 3px rgba(255,215,0,0.95), 0 0 20px rgba(255,215,0,0.7)"
               : isPreviewOrigin
               ? "0 0 0 3px rgba(255,210,0,0.95), 0 0 18px rgba(255,210,0,0.65)"
               : isPreviewDestination
@@ -1500,45 +1314,19 @@ export default function App() {
             marginBottom: isTop ? 0 : 8,
           }}
         >
-          {isLegalDestination && (activeSource !== null || legalHelpActive) && (
+          {isLegalDestination && activeSource !== null && (
             <div
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 3,
+                width: "clamp(20px, 2vw, 28px)",
+                height: "clamp(20px, 2vw, 28px)",
+                borderRadius: "50%",
+                background: moveDestinationColor(point, currentPlayer),
+                border: "2px solid rgba(255,255,255,0.85)",
+                boxShadow: "0 0 18px rgba(0,200,255,0.95)",
                 marginBottom: isTop ? 0 : 4,
                 marginTop: isTop ? 4 : 0,
               }}
-            >
-              <div
-                style={{
-                  width: "clamp(22px, 2.2vw, 32px)",
-                  height: "clamp(22px, 2.2vw, 32px)",
-                  borderRadius: "50%",
-                  background: isBearOffDestination ? "radial-gradient(circle, #ffe98a 0%, #b56a00 75%)" : moveDestinationColor(point, currentPlayer),
-                  border: "3px solid rgba(255,255,255,0.92)",
-                  boxShadow: legalHelpActive ? "0 0 24px rgba(0,255,200,1)" : "0 0 18px rgba(0,200,255,0.95)",
-                }}
-              />
-              {isBearOffDestination && (
-                <div
-                  style={{
-                    background: "rgba(20,8,0,0.86)",
-                    color: "#ffe28a",
-                    border: "1px solid rgba(255,226,138,0.72)",
-                    borderRadius: 999,
-                    padding: "2px 5px",
-                    fontSize: "clamp(8px, 0.75vw, 10px)",
-                    fontWeight: 900,
-                    letterSpacing: 0.5,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  OFF
-                </div>
-              )}
-            </div>
+            />
           )}
           {point.owner &&
             renderCheckers(
@@ -1676,20 +1464,15 @@ export default function App() {
   }
 
   function SideTray({ player }: { player: Player }) {
-    const canBearOffForPlayer = player === currentPlayer && legalMoves.some((move) => move.isBearOff);
-
     return (
       <div
-        onClick={() => handleBearOffTrayClick(player)}
         style={{
           width: "clamp(62px, 5vw, 74px)",
           minWidth: 62,
           borderRadius: 18,
           background: "linear-gradient(145deg, #5b3219, #1a0904)",
           border: "3px solid #7c461f",
-          boxShadow: canBearOffForPlayer
-            ? "inset 0 0 24px rgba(0,0,0,0.72), 0 0 0 5px rgba(255,226,138,0.95), 0 0 28px rgba(255,190,60,0.9)"
-            : "inset 0 0 24px rgba(0,0,0,0.72), 0 8px 18px rgba(0,0,0,0.45)",
+          boxShadow: "inset 0 0 24px rgba(0,0,0,0.72), 0 8px 18px rgba(0,0,0,0.45)",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -1699,9 +1482,6 @@ export default function App() {
           textAlign: "center",
           overflow: "hidden",
           padding: "8px 4px",
-          cursor: canBearOffForPlayer ? "pointer" : "default",
-          transition: "box-shadow 0.2s ease, transform 0.2s ease",
-          transform: canBearOffForPlayer ? "scale(1.02)" : "scale(1)",
         }}
       >
         <div style={{ fontSize: 12 }}>{player.toUpperCase()}</div>
@@ -1712,13 +1492,10 @@ export default function App() {
     );
   }
 
-  function CenterHinge({ section }: { section: "top" | "bottom" }) {
-    const player: Player = section === "top" ? "White" : "Black";
-    const count = bar[player];
-
+  function CenterHinge() {
     return (
       <div
-        aria-label={`${section === "top" ? "White" : "Black"} hit-checker bar`}
+        aria-label="Center bar"
         style={{
           width: "clamp(38px, 3vw, 48px)",
           minWidth: 38,
@@ -1726,16 +1503,39 @@ export default function App() {
           borderLeft: "2px solid rgba(255,210,120,0.25)",
           borderRight: "2px solid rgba(0,0,0,0.65)",
           boxShadow: "inset 0 0 20px rgba(0,0,0,0.78), 0 0 8px rgba(0,0,0,0.35)",
-          display: "flex",
-          alignItems: section === "top" ? "flex-end" : "flex-start",
-          justifyContent: "center",
+          display: "grid",
+          gridTemplateRows: "1fr 1fr",
+          alignItems: "center",
+          justifyItems: "center",
           overflow: "hidden",
           borderRadius: 4,
-          paddingTop: section === "bottom" ? 8 : 0,
-          paddingBottom: section === "top" ? 8 : 0,
         }}
       >
-        <TrayCheckers player={player} count={count} />
+        <div
+          style={{
+            width: "100%",
+            minHeight: 126,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderBottom: "1px solid rgba(0,0,0,0.35)",
+          }}
+        >
+          <TrayCheckers player="White" count={bar.White} />
+        </div>
+
+        <div
+          style={{
+            width: "100%",
+            minHeight: 126,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderTop: "1px solid rgba(255,220,150,0.08)",
+          }}
+        >
+          <TrayCheckers player="Black" count={bar.Black} />
+        </div>
       </div>
     );
   }
@@ -1892,13 +1692,16 @@ export default function App() {
           50% { filter: brightness(1.14); }
           100% { filter: brightness(1); }
         }
-        @keyframes warningFade {
-          0% { opacity: 0; transform: translateY(-10px) scale(0.98); }
-          12% { opacity: 1; transform: translateY(0) scale(1); }
-          82% { opacity: 1; transform: translateY(0) scale(1); }
-          100% { opacity: 0; transform: translateY(-6px) scale(0.99); }
-        }
-      `}</style>
+      `}
+        
+<style>{`
+  @keyframes warningFade {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.96); }
+    15% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    85% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.96); }
+  }
+`}</style>
 
       {draggingPoint !== null && dragPosition && board[draggingPoint]?.owner && (
         <div
@@ -1920,32 +1723,6 @@ export default function App() {
             boxShadow: "0 16px 26px rgba(0,0,0,0.65), 0 0 22px rgba(255,230,150,0.35)",
           }}
         />
-      )}
-
-      {warningMessage && (
-        <div
-          style={{
-            position: "fixed",
-            top: "clamp(12px, 2.2vw, 28px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10001,
-            pointerEvents: "none",
-            background: "linear-gradient(145deg, #5b0000, #d71919 58%, #ff6b35)",
-            color: "white",
-            border: "3px solid #ffd18a",
-            borderRadius: 18,
-            boxShadow: "0 14px 34px rgba(0,0,0,0.58), 0 0 22px rgba(255,74,44,0.58)",
-            padding: "clamp(10px, 1.4vw, 14px) clamp(16px, 2.4vw, 28px)",
-            fontSize: "clamp(16px, 1.9vw, 24px)",
-            fontWeight: 900,
-            letterSpacing: 0.3,
-            textAlign: "center",
-            animation: "warningFade 1.8s ease forwards",
-          }}
-        >
-          {warningMessage}
-        </div>
       )}
 
       {turnBanner && (
@@ -2013,7 +1790,34 @@ export default function App() {
         </div>
       )}
 
-      <h1
+      
+      {warningMessage && (
+        <div
+          style={{
+            position: "fixed",
+            top: "clamp(14px, 2.2vh, 24px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10000,
+            background: "linear-gradient(145deg, rgba(120,0,0,0.98), rgba(40,0,0,0.98))",
+            color: "#fff6e8",
+            padding: "10px 24px",
+            borderRadius: 14,
+            border: "2px solid #ff5c5c",
+            fontWeight: 900,
+            fontSize: "clamp(15px, 1.6vw, 22px)",
+            letterSpacing: 0.2,
+            boxShadow: "0 0 22px rgba(255,0,0,0.46), inset 0 1px 0 rgba(255,255,255,0.16)",
+            pointerEvents: "none",
+            textAlign: "center",
+            animation: "warningPulse 1.7s ease forwards",
+          }}
+        >
+          ⚠ {warningMessage}
+        </div>
+      )}
+
+<h1
         style={{
           width: shellWidth,
           margin: "0 auto clamp(6px, 0.8vw, 10px)",
@@ -2082,7 +1886,7 @@ export default function App() {
               alignItems: "center",
             }}
           >
-            {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index)) : "-"}
+            {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index, controller)) : "-"}
           </div>
         </div>
 
@@ -2105,38 +1909,29 @@ export default function App() {
           <div style={{ fontSize: "clamp(16px, 1.65vw, 20px)", fontWeight: "bold" }}>{controller}</div>
         </div>
 
-        <div
+        <button
+          aria-label="Resign game"
+          onClick={resignGame}
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            minHeight: 58,
+            justifySelf: "end",
+            alignSelf: "center",
+            width: "clamp(76px, 7vw, 96px)",
+            minHeight: 34,
+            padding: "5px 8px",
+            borderRadius: 999,
+            border: "2px solid #b43a2f",
+            background: confirmResign
+              ? "linear-gradient(145deg, #a60000, #3b0000)"
+              : "linear-gradient(145deg, #2a0808, #060202)",
+            color: confirmResign ? "#ffffff" : "#ff6b5f",
+            fontWeight: 900,
+            fontSize: "clamp(10px, 0.9vw, 13px)",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)",
           }}
         >
-          <button
-            style={{
-              ...luxuryButton,
-              minWidth: 66,
-              padding: "7px 10px",
-              fontSize: 10,
-              background: confirmResign
-                ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
-                : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
-              color: confirmResign ? "#fff3d0" : "#f3d18b",
-              border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
-              boxShadow: confirmResign
-                ? "0 0 18px rgba(255,80,40,0.65), inset 0 1px 0 rgba(255,220,150,0.25)"
-                : "inset 0 1px 0 rgba(255,220,150,0.18), 0 5px 14px rgba(0,0,0,0.55)",
-              opacity: canResign ? 1 : 0.45,
-              cursor: canResign ? "pointer" : "not-allowed",
-            }}
-            disabled={!canResign}
-            onClick={resignGame}
-            title={confirmResign ? "Confirm resignation" : "Resign game"}
-          >
-            {confirmResign ? "Confirm" : "Resign"}
-          </button>
-        </div>
+          {confirmResign ? "Confirm" : "Resign"}
+        </button>
       </div>
 
       <div
@@ -2190,21 +1985,7 @@ export default function App() {
         )}
 
         <button style={luxuryButton} onClick={undoMove}>Undo</button>
-        <button
-          style={{
-            ...luxuryButton,
-            opacity: canSubmitTurn ? 1 : 0.45,
-            cursor: canSubmitTurn ? "pointer" : "not-allowed",
-            pointerEvents: canSubmitTurn ? "auto" : "none",
-          }}
-          type="button"
-          disabled={!canSubmitTurn}
-          aria-disabled={!canSubmitTurn}
-          onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (canSubmitTurn) submitTurn(); else setMessage(gamePhase === "OPENING_ROLL" ? "Roll opening dice first." : "End Turn is not available yet."); }}
-          title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
-        >
-          End Turn
-        </button>
+        <button style={luxuryButton} onClick={submitTurn}>End Turn</button>
       </div>
 
       <div
@@ -2216,25 +1997,6 @@ export default function App() {
         }}
       >
         {winner ? `${winner} wins! Game over.` : message}
-        {turnGuidance && !winner && (
-          <div
-            style={{
-              margin: "7px auto 0",
-              width: "fit-content",
-              maxWidth: "min(92vw, 720px)",
-              background: "linear-gradient(145deg, #fff3b0, #c57b16)",
-              color: "#1a0900",
-              border: "2px solid #ffe28a",
-              borderRadius: 999,
-              padding: "6px 14px",
-              fontSize: "clamp(14px, 1.45vw, 18px)",
-              fontWeight: 900,
-              boxShadow: "0 8px 18px rgba(0,0,0,0.38)",
-            }}
-          >
-            {turnGuidance}
-          </div>
-        )}
         {canChooseDoctrine && (
           <div
             style={{
@@ -2305,7 +2067,7 @@ export default function App() {
             <PointQuadrant points={topLeftRow} isTop={true} />
           </div>
 
-          <CenterHinge section="top" />
+          <CenterHinge />
 
           <div
             style={{
@@ -2351,7 +2113,7 @@ export default function App() {
             <PointQuadrant points={bottomLeftRow} isTop={false} />
           </div>
 
-          <CenterHinge section="bottom" />
+          <CenterHinge />
 
           <div
             style={{
