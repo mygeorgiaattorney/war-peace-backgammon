@@ -699,9 +699,16 @@ export default function App() {
     !diceRolling &&
     turnIsPlayable &&
     !awaitingModeChoice &&
+<<<<<<< HEAD
     (
       (turnMoveCount > 0 && (remainingDice.length === 0 || legalMoves.length === 0)) ||
       (turnMoveCount === 0 && remainingDice.length > 0 && legalMoves.length === 0)
+=======
+    remainingDice.length > 0 &&
+    (
+      (turnMoveCount > 0 && (remainingDice.length === 0 || legalMoves.length === 0)) ||
+      (turnMoveCount === 0 && legalMoves.length === 0)
+>>>>>>> 53f285a717e2edffc226ce453804b28f6a43f389
     );
   const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
   const whitePipCount = calculatePipCount(board, "White", bar);
