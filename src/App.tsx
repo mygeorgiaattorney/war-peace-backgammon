@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Player = "White" | "Black";
 type Mode = "WAR" | "PEACE";
@@ -64,6 +64,31 @@ type Snapshot = {
   turnMoveCount: number;
 };
 
+type SavedGameState = {
+  version: 1;
+  savedAt: string;
+  board: Point[];
+  bar: BarState;
+  off: OffState;
+  mode: Mode;
+  currentPlayer: Player;
+  controller: Player;
+  controlState: ControlState;
+  gamePhase: GamePhase;
+  remainingDice: number[];
+  lastMove: Move | null;
+  moveLog: MoveLogEntry[];
+  turnMoveCount: number;
+  openingDice: number[] | null;
+  openingWinner: Player | null;
+  awaitingModeChoice: boolean;
+  openingTurnMoveMade: boolean;
+  openingTurnRequiresMove: boolean;
+  winner: Player | null;
+  message: string;
+};
+
+const SAVE_KEY = "warPeaceBackgammonSaveV1";
 const HOME_BAR: BarState = { White: 0, Black: 0 };
 const HOME_OFF: OffState = { White: 0, Black: 0 };
 
@@ -641,6 +666,12 @@ export default function App() {
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [legalHelpActive, setLegalHelpActive] = useState(false);
   const [assistSourcePoint, setAssistSourcePoint] = useState<number | null>(null);
+  const [hasSavedGame, setHasSavedGame] = useState(false);
+  const dragCompletionGuard = useRef(false);
+
+  useEffect(() => {
+    setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
+  }, []);
 
   useEffect(() => {
     console.table(runEngineSelfTests().map((result) => ({ result })));
@@ -737,6 +768,127 @@ export default function App() {
       setLegalHelpActive(false);
       setAssistSourcePoint(null);
     }, 2200);
+  }
+
+  function saveGame(): void {
+    const savedGame: SavedGameState = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      board: cloneBoard(board),
+      bar: { ...bar },
+      off: { ...off },
+      mode,
+      currentPlayer,
+      controller,
+      controlState,
+      gamePhase,
+      remainingDice: [...remainingDice],
+      lastMove: lastMove ? { ...lastMove } : null,
+      moveLog: moveLog.map((entry) => ({
+        ...entry,
+        move: { ...entry.move },
+        remainingDiceAfter: [...entry.remainingDiceAfter],
+      })),
+      turnMoveCount,
+      openingDice: openingDice ? [...openingDice] : null,
+      openingWinner,
+      awaitingModeChoice,
+      openingTurnMoveMade,
+      openingTurnRequiresMove,
+      winner,
+      message,
+    };
+
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(savedGame));
+    setHasSavedGame(true);
+    setConfirmResign(false);
+    setMessage("Game saved on this computer.");
+    flashBanner("GAME SAVED", 900);
+  }
+
+  function isSavedGameState(value: unknown): value is SavedGameState {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<SavedGameState>;
+    return (
+      candidate.version === 1 &&
+      Array.isArray(candidate.board) &&
+      candidate.board.length === 24 &&
+      candidate.bar !== undefined &&
+      candidate.off !== undefined &&
+      (candidate.currentPlayer === "White" || candidate.currentPlayer === "Black") &&
+      (candidate.controller === "White" || candidate.controller === "Black") &&
+      (candidate.mode === "WAR" || candidate.mode === "PEACE") &&
+      typeof candidate.gamePhase === "string" &&
+      Array.isArray(candidate.remainingDice)
+    );
+  }
+
+  function loadSavedGame(): void {
+    const rawSave = window.localStorage.getItem(SAVE_KEY);
+    if (!rawSave) {
+      setHasSavedGame(false);
+      setMessage("No saved game found on this computer.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawSave);
+      if (!isSavedGameState(parsed)) {
+        throw new Error("Saved game format is not valid.");
+      }
+
+      setBoard(cloneBoard(parsed.board));
+      setBar({ ...parsed.bar });
+      setOff({ ...parsed.off });
+      setMode(parsed.mode);
+      setCurrentPlayer(parsed.currentPlayer);
+      setController(parsed.controller);
+      setControlState(parsed.controlState);
+      setGamePhase(parsed.gamePhase);
+      setRemainingDice([...parsed.remainingDice]);
+      setSelectedPoint(null);
+      setDraggingPoint(null);
+      setHoverPoint(null);
+      setDragPosition(null);
+      setPreviewMoveKey(null);
+      setLastMove(parsed.lastMove ? { ...parsed.lastMove } : null);
+      setShowAnalysis(false);
+      setMoveLog(parsed.moveLog.map((entry) => ({
+        ...entry,
+        move: { ...entry.move },
+        remainingDiceAfter: [...entry.remainingDiceAfter],
+      })));
+      setTurnMoveCount(parsed.turnMoveCount);
+      setTurnBanner(null);
+      setDiceRolling(false);
+      setAnimatingMoveKey(null);
+      setMessage(parsed.message || "Saved game loaded.");
+      setHistory([]);
+      setOpeningDice(parsed.openingDice ? [...parsed.openingDice] : null);
+      setOpeningWinner(parsed.openingWinner);
+      setAwaitingModeChoice(parsed.awaitingModeChoice);
+      setOpeningTurnMoveMade(parsed.openingTurnMoveMade);
+      setOpeningTurnRequiresMove(parsed.openingTurnRequiresMove);
+      setWinner(parsed.winner);
+      setConfirmResign(false);
+      setWarningMessage(null);
+      setLegalHelpActive(false);
+      setAssistSourcePoint(null);
+      setHasSavedGame(true);
+      flashBanner("GAME LOADED", 900);
+    } catch {
+      window.localStorage.removeItem(SAVE_KEY);
+      setHasSavedGame(false);
+      setMessage("Saved game was damaged and has been cleared.");
+      flashWarning("Saved game could not be loaded.");
+    }
+  }
+
+  function clearSavedGame(): void {
+    window.localStorage.removeItem(SAVE_KEY);
+    setHasSavedGame(false);
+    setConfirmResign(false);
+    setMessage("Saved game cleared from this computer.");
   }
 
   function checkForWinner(nextOff: OffState): Player | null {
@@ -1122,7 +1274,9 @@ export default function App() {
 
     if (!canDragFromPoint) return;
 
+    event?.preventDefault();
     event?.currentTarget.setPointerCapture?.(event.pointerId);
+    dragCompletionGuard.current = false;
     setDraggingPoint(index);
     setSelectedPoint(index);
     setPreviewMoveKey(null);
@@ -1130,10 +1284,11 @@ export default function App() {
     setMessage(`Dragging from point ${index + 1}. Release on a highlighted destination.`);
   }
 
-  function finishDrag(event: React.PointerEvent<HTMLDivElement>): void {
-    if (draggingPoint === null) return;
+  function finishDragAt(clientX: number, clientY: number): void {
+    if (draggingPoint === null || dragCompletionGuard.current) return;
+    dragCompletionGuard.current = true;
 
-    const elementUnderPointer = document.elementFromPoint(event.clientX, event.clientY);
+    const elementUnderPointer = document.elementFromPoint(clientX, clientY);
     const pointElement = elementUnderPointer?.closest("[data-point-index]") as HTMLElement | null;
     const dropIndexText = pointElement?.dataset.pointIndex;
     const dropIndex = dropIndexText === undefined ? null : Number(dropIndexText);
@@ -1160,6 +1315,11 @@ export default function App() {
     executeMove(move);
   }
 
+  function finishDrag(event: React.PointerEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    finishDragAt(event.clientX, event.clientY);
+  }
+
   function cancelDrag(): void {
     if (draggingPoint === null) return;
     setDraggingPoint(null);
@@ -1169,14 +1329,52 @@ export default function App() {
 
   function updateDragPosition(event: React.PointerEvent<HTMLDivElement>): void {
     if (draggingPoint === null) return;
+    event.preventDefault();
+    updateDragPositionAt(event.clientX, event.clientY);
+  }
 
-    setDragPosition({ x: event.clientX, y: event.clientY });
+  function updateDragPositionAt(clientX: number, clientY: number): void {
+    if (draggingPoint === null) return;
 
-    const elementUnderPointer = document.elementFromPoint(event.clientX, event.clientY);
+    setDragPosition({ x: clientX, y: clientY });
+
+    const elementUnderPointer = document.elementFromPoint(clientX, clientY);
     const pointElement = elementUnderPointer?.closest("[data-point-index]") as HTMLElement | null;
     const hoverIndexText = pointElement?.dataset.pointIndex;
     setHoverPoint(hoverIndexText === undefined ? null : Number(hoverIndexText));
   }
+
+  useEffect(() => {
+    if (draggingPoint === null) return;
+
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "grabbing";
+
+    function handleWindowPointerMove(event: PointerEvent): void {
+      event.preventDefault();
+      updateDragPositionAt(event.clientX, event.clientY);
+    }
+
+    function handleWindowPointerUp(event: PointerEvent): void {
+      event.preventDefault();
+      finishDragAt(event.clientX, event.clientY);
+    }
+
+    function handleWindowKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") cancelDrag();
+    }
+
+    window.addEventListener("pointermove", handleWindowPointerMove, { passive: false });
+    window.addEventListener("pointerup", handleWindowPointerUp, { passive: false });
+    window.addEventListener("keydown", handleWindowKeyDown);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp);
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [draggingPoint, legalMoves]);
 
   function handlePointClick(index: number): void {
     const completedWinner = winner ?? checkForWinner(off);
@@ -1443,7 +1641,7 @@ export default function App() {
           position: "relative",
           width: "100%",
           height: "clamp(190px, 26vh, 300px)",
-          cursor: isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
+          cursor: isDraggingOrigin ? "grabbing" : isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
           touchAction: "none",
           userSelect: "none",
           display: "flex",
@@ -1898,6 +2096,10 @@ export default function App() {
           82% { opacity: 1; transform: translateY(0) scale(1); }
           100% { opacity: 0; transform: translateY(-6px) scale(0.99); }
         }
+        @keyframes dragPulse {
+          0% { filter: brightness(1); }
+          100% { filter: brightness(1.2); }
+        }
       `}</style>
 
       {draggingPoint !== null && dragPosition && board[draggingPoint]?.owner && (
@@ -1906,20 +2108,46 @@ export default function App() {
             position: "fixed",
             left: dragPosition.x,
             top: dragPosition.y,
-            width: "clamp(32px, 3.6vw, 42px)",
-            height: "clamp(32px, 3.6vw, 42px)",
-            borderRadius: "50%",
-            transform: "translate(-50%, -50%) scale(1.08)",
+            transform: "translate(-50%, -50%)",
             pointerEvents: "none",
             zIndex: 10000,
-            background:
-              board[draggingPoint].owner === "White"
-                ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
-                : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
-            border: board[draggingPoint].owner === "White" ? "2px solid #f6e6bd" : "2px solid #050505",
-            boxShadow: "0 16px 26px rgba(0,0,0,0.65), 0 0 22px rgba(255,230,150,0.35)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 7,
           }}
-        />
+        >
+          <div
+            style={{
+              width: "clamp(44px, 4.2vw, 58px)",
+              height: "clamp(44px, 4.2vw, 58px)",
+              borderRadius: "50%",
+              transform: "scale(1.12)",
+              background:
+                board[draggingPoint].owner === "White"
+                  ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
+                  : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
+              border: board[draggingPoint].owner === "White" ? "3px solid #fff0c8" : "3px solid #050505",
+              boxShadow: "0 20px 32px rgba(0,0,0,0.78), 0 0 0 5px rgba(255,230,150,0.48), 0 0 30px rgba(255,210,80,0.52)",
+              animation: "dragPulse 0.75s ease-in-out infinite alternate",
+            }}
+          />
+          <div
+            style={{
+              background: "rgba(10, 4, 0, 0.88)",
+              color: "#ffeab0",
+              border: "1px solid rgba(255, 220, 130, 0.85)",
+              borderRadius: 999,
+              padding: "4px 9px",
+              fontSize: "clamp(10px, 0.9vw, 13px)",
+              fontWeight: 900,
+              boxShadow: "0 8px 14px rgba(0,0,0,0.45)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Release on glow
+          </div>
+        </div>
       )}
 
       {warningMessage && (
@@ -2204,6 +2432,48 @@ export default function App() {
           title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
         >
           End Turn
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 72,
+          }}
+          type="button"
+          onClick={saveGame}
+          title="Save this game in this browser on this computer"
+        >
+          Save
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 72,
+            opacity: hasSavedGame ? 1 : 0.45,
+            cursor: hasSavedGame ? "pointer" : "not-allowed",
+          }}
+          type="button"
+          disabled={!hasSavedGame}
+          onClick={loadSavedGame}
+          title={hasSavedGame ? "Load the saved game from this browser" : "No saved game is available"}
+        >
+          Load
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 82,
+            opacity: hasSavedGame ? 1 : 0.45,
+            cursor: hasSavedGame ? "pointer" : "not-allowed",
+          }}
+          type="button"
+          disabled={!hasSavedGame}
+          onClick={clearSavedGame}
+          title={hasSavedGame ? "Clear the saved game from this browser" : "No saved game is available"}
+        >
+          Clear Save
         </button>
       </div>
 
