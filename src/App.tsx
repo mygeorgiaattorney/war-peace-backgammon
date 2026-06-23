@@ -103,6 +103,60 @@ type SavedGameState = {
   message: string;
 };
 
+type WinLossModeStats = {
+  wins: number;
+  losses: number;
+};
+
+type HeadToHeadStats = {
+  opponentName: string;
+  games: number;
+  wins: number;
+  losses: number;
+  totalLoserPipsWhenWon: number;
+  totalOwnPipsWhenLost: number;
+};
+
+type PlayerStats = {
+  name: string;
+  games: number;
+  wins: number;
+  losses: number;
+  resignationWins: number;
+  resignationLosses: number;
+  bearOffWins: number;
+  bearOffLosses: number;
+  war: WinLossModeStats;
+  peace: WinLossModeStats;
+  totalLoserPipsWhenWon: number;
+  totalOwnPipsWhenLost: number;
+  headToHead: Record<string, HeadToHeadStats>;
+};
+
+type PlayerGameRecord = {
+  id: string;
+  playedAt: string;
+  whitePlayer: string;
+  blackPlayer: string;
+  winnerPlayer: string;
+  loserPlayer: string;
+  winnerColor: Player;
+  loserColor: Player;
+  mode: Mode;
+  reason: WinReason;
+  loserPips: number;
+  winnerOff: number;
+  loserOff: number;
+  movesPlayed: number;
+};
+
+type PlayerRecordBook = {
+  version: 1;
+  players: Record<string, PlayerStats>;
+  games: PlayerGameRecord[];
+};
+
+const PLAYER_RECORDS_KEY = "warPeaceBackgammonPlayerRecordsV1";
 const SAVE_KEY = "warPeaceBackgammonSaveV1";
 const HOME_BAR: BarState = { White: 0, Black: 0 };
 const HOME_OFF: OffState = { White: 0, Black: 0 };
@@ -622,6 +676,101 @@ function formatMoveLogEntry(entry: MoveLogEntry): string {
   return `${entry.id}. ${entry.player} ${entry.mode}: ${describeMove(entry.move)}${suffix}`;
 }
 
+function normalizePlayerName(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+function playerRecordKey(name: string): string {
+  return normalizePlayerName(name).toLowerCase();
+}
+
+function createEmptyRecordBook(): PlayerRecordBook {
+  return { version: 1, players: {}, games: [] };
+}
+
+function createPlayerStats(name: string): PlayerStats {
+  return {
+    name: normalizePlayerName(name) || "Unnamed Player",
+    games: 0,
+    wins: 0,
+    losses: 0,
+    resignationWins: 0,
+    resignationLosses: 0,
+    bearOffWins: 0,
+    bearOffLosses: 0,
+    war: { wins: 0, losses: 0 },
+    peace: { wins: 0, losses: 0 },
+    totalLoserPipsWhenWon: 0,
+    totalOwnPipsWhenLost: 0,
+    headToHead: {},
+  };
+}
+
+function ensurePlayerStats(book: PlayerRecordBook, name: string): PlayerStats {
+  const cleanName = normalizePlayerName(name) || "Unnamed Player";
+  const key = playerRecordKey(cleanName);
+  if (!book.players[key]) book.players[key] = createPlayerStats(cleanName);
+  book.players[key].name = cleanName;
+  return book.players[key];
+}
+
+function ensureHeadToHead(stats: PlayerStats, opponentName: string): HeadToHeadStats {
+  const key = playerRecordKey(opponentName);
+  if (!stats.headToHead[key]) {
+    stats.headToHead[key] = {
+      opponentName: normalizePlayerName(opponentName) || "Unnamed Player",
+      games: 0,
+      wins: 0,
+      losses: 0,
+      totalLoserPipsWhenWon: 0,
+      totalOwnPipsWhenLost: 0,
+    };
+  }
+  stats.headToHead[key].opponentName = normalizePlayerName(opponentName) || "Unnamed Player";
+  return stats.headToHead[key];
+}
+
+function cloneRecordBook(book: PlayerRecordBook): PlayerRecordBook {
+  return JSON.parse(JSON.stringify(book)) as PlayerRecordBook;
+}
+
+function loadPlayerRecordBook(): PlayerRecordBook {
+  if (typeof window === "undefined") return createEmptyRecordBook();
+
+  try {
+    const raw = window.localStorage.getItem(PLAYER_RECORDS_KEY);
+    if (!raw) return createEmptyRecordBook();
+
+    const parsed = JSON.parse(raw) as Partial<PlayerRecordBook>;
+    if (parsed.version !== 1 || !parsed.players || !Array.isArray(parsed.games)) {
+      return createEmptyRecordBook();
+    }
+
+    return {
+      version: 1,
+      players: parsed.players as Record<string, PlayerStats>,
+      games: parsed.games as PlayerGameRecord[],
+    };
+  } catch {
+    return createEmptyRecordBook();
+  }
+}
+
+function savePlayerRecordBook(book: PlayerRecordBook): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PLAYER_RECORDS_KEY, JSON.stringify(book));
+}
+
+function formatWinRate(wins: number, games: number): string {
+  if (games === 0) return "—";
+  return `${Math.round((wins / games) * 100)}%`;
+}
+
+function averagePips(total: number, count: number): string {
+  if (count === 0) return "—";
+  return (total / count).toFixed(1);
+}
+
 function runEngineSelfTests(): string[] {
   const results: string[] = [];
 
@@ -690,6 +839,10 @@ export default function App() {
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [legalHelpActive, setLegalHelpActive] = useState(false);
   const [assistSourcePoint, setAssistSourcePoint] = useState<number | null>(null);
+  const [whitePlayerName, setWhitePlayerName] = useState("White Player");
+  const [blackPlayerName, setBlackPlayerName] = useState("Black Player");
+  const [recordBook, setRecordBook] = useState<PlayerRecordBook>(() => loadPlayerRecordBook());
+  const [showRecords, setShowRecords] = useState(false);
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const dragCompletionGuard = useRef(false);
 
@@ -746,8 +899,15 @@ export default function App() {
     : [];
 
   const displayDice = remainingDice.length > 0 ? remainingDice : openingDice ?? [];
+  const cleanWhitePlayerName = normalizePlayerName(whitePlayerName);
+  const cleanBlackPlayerName = normalizePlayerName(blackPlayerName);
+  const playersReady =
+    cleanWhitePlayerName.length > 0 &&
+    cleanBlackPlayerName.length > 0 &&
+    playerRecordKey(cleanWhitePlayerName) !== playerRecordKey(cleanBlackPlayerName);
+  const canEditPlayers = gamePhase === "OPENING_ROLL" && openingDice === null && moveLog.length === 0 && !winner;
   const canChooseDoctrine = gamePhase === "MODE_CHOICE" && awaitingModeChoice && openingDice !== null && openingWinner !== null;
-  const canRollOpening = !diceRolling && gamePhase === "OPENING_ROLL";
+  const canRollOpening = !diceRolling && gamePhase === "OPENING_ROLL" && playersReady;
   const turnIsPlayable = gamePhase === "OPENING_TURN" || gamePhase === "NORMAL_TURN";
   const canSubmitTurn =
     !winner &&
@@ -761,6 +921,21 @@ export default function App() {
   const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
   const whitePipCount = calculatePipCount(board, "White", bar);
   const blackPipCount = calculatePipCount(board, "Black", bar);
+  const knownPlayers = useMemo(
+    () => Object.values(recordBook.players).sort((a, b) => a.name.localeCompare(b.name)),
+    [recordBook]
+  );
+  const leaderboard = useMemo(
+    () =>
+      Object.values(recordBook.players).sort((a, b) => {
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        if (b.games !== a.games) return b.games - a.games;
+        return a.name.localeCompare(b.name);
+      }),
+    [recordBook]
+  );
+  const whiteRecord = recordBook.players[playerRecordKey(cleanWhitePlayerName)];
+  const blackRecord = recordBook.players[playerRecordKey(cleanBlackPlayerName)];
 
   async function animateDiceRoll(): Promise<void> {
     setDiceRolling(true);
@@ -917,6 +1092,73 @@ export default function App() {
     setMessage("Saved game cleared from this computer.");
   }
 
+  function recordCompletedGame(result: FinalResult): void {
+    const whiteName = cleanWhitePlayerName || "White Player";
+    const blackName = cleanBlackPlayerName || "Black Player";
+    const winnerName = result.winner === "White" ? whiteName : blackName;
+    const loserName = result.loser === "White" ? whiteName : blackName;
+
+    if (playerRecordKey(winnerName) === playerRecordKey(loserName)) return;
+
+    setRecordBook((currentBook) => {
+      const nextBook = cloneRecordBook(currentBook);
+      const winnerStats = ensurePlayerStats(nextBook, winnerName);
+      const loserStats = ensurePlayerStats(nextBook, loserName);
+      const winnerHeadToHead = ensureHeadToHead(winnerStats, loserName);
+      const loserHeadToHead = ensureHeadToHead(loserStats, winnerName);
+      const gameRecord: PlayerGameRecord = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        playedAt: new Date().toISOString(),
+        whitePlayer: whiteName,
+        blackPlayer: blackName,
+        winnerPlayer: winnerName,
+        loserPlayer: loserName,
+        winnerColor: result.winner,
+        loserColor: result.loser,
+        mode: result.modeAtFinish,
+        reason: result.reason,
+        loserPips: result.loserPips,
+        winnerOff: result.winnerOff,
+        loserOff: result.loserOff,
+        movesPlayed: result.movesPlayed,
+      };
+
+      winnerStats.games += 1;
+      winnerStats.wins += 1;
+      winnerStats.totalLoserPipsWhenWon += result.loserPips;
+      loserStats.games += 1;
+      loserStats.losses += 1;
+      loserStats.totalOwnPipsWhenLost += result.loserPips;
+
+      if (result.reason === "RESIGNATION") {
+        winnerStats.resignationWins += 1;
+        loserStats.resignationLosses += 1;
+      } else {
+        winnerStats.bearOffWins += 1;
+        loserStats.bearOffLosses += 1;
+      }
+
+      if (result.modeAtFinish === "WAR") {
+        winnerStats.war.wins += 1;
+        loserStats.war.losses += 1;
+      } else {
+        winnerStats.peace.wins += 1;
+        loserStats.peace.losses += 1;
+      }
+
+      winnerHeadToHead.games += 1;
+      winnerHeadToHead.wins += 1;
+      winnerHeadToHead.totalLoserPipsWhenWon += result.loserPips;
+      loserHeadToHead.games += 1;
+      loserHeadToHead.losses += 1;
+      loserHeadToHead.totalOwnPipsWhenLost += result.loserPips;
+
+      nextBook.games = [gameRecord, ...nextBook.games].slice(0, 200);
+      savePlayerRecordBook(nextBook);
+      return nextBook;
+    });
+  }
+
   function checkForWinner(nextOff: OffState): Player | null {
     if (nextOff.White >= 15) return "White";
     if (nextOff.Black >= 15) return "Black";
@@ -956,6 +1198,7 @@ export default function App() {
 
     setWinner(player);
     setFinalResult(result);
+    recordCompletedGame(result);
     setMessage(formatFinalResult(result));
     playWinFanfare();
     flashBanner(`${player.toUpperCase()} WINS`, 3000);
@@ -1031,6 +1274,12 @@ export default function App() {
   }
 
   async function rollOpening(): Promise<void> {
+    if (!playersReady) {
+      setMessage("Enter two different player names before rolling opening dice.");
+      flashWarning("Enter two different player names.");
+      return;
+    }
+
     if (!canRollOpening) {
       if (gamePhase === "MODE_CHOICE") {
         setMessage("Choose WAR or PEACE before rolling again.");
@@ -2365,6 +2614,96 @@ export default function App() {
           width: shellWidth,
           margin: "0 auto clamp(7px, 0.8vw, 10px)",
           display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 8,
+          alignItems: "stretch",
+        }}
+      >
+        {([
+          ["White", whitePlayerName, setWhitePlayerName, whiteRecord] as const,
+          ["Black", blackPlayerName, setBlackPlayerName, blackRecord] as const,
+        ]).map(([color, value, setter, stats]) => (
+          <div
+            key={color}
+            style={{
+              background: "linear-gradient(145deg, rgba(255,238,190,0.16), rgba(20,8,2,0.86))",
+              border: "2px solid rgba(226,171,87,0.55)",
+              borderRadius: 16,
+              padding: "8px 10px",
+              boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.34)",
+            }}
+          >
+            <label
+              style={{
+                display: "block",
+                color: color === "White" ? "#fff2c8" : "#d7d7d7",
+                fontSize: "clamp(11px, 1vw, 13px)",
+                fontWeight: 900,
+                letterSpacing: 0.7,
+                marginBottom: 5,
+              }}
+            >
+              {color} Player
+            </label>
+            <input
+              value={value}
+              onChange={(event) => setter(event.target.value)}
+              disabled={!canEditPlayers}
+              list="war-peace-known-players"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                borderRadius: 12,
+                border: "2px solid rgba(255,226,138,0.68)",
+                background: canEditPlayers ? "#fff8df" : "rgba(255,248,223,0.72)",
+                color: "#1b0b03",
+                padding: "7px 9px",
+                fontSize: "clamp(14px, 1.35vw, 18px)",
+                fontWeight: 900,
+                fontFamily: "Georgia, 'Times New Roman', serif",
+              }}
+            />
+            <div
+              style={{
+                marginTop: 5,
+                color: "#f3d18b",
+                fontSize: "clamp(11px, 1vw, 13px)",
+                fontWeight: 800,
+              }}
+            >
+              {stats
+                ? `${stats.wins}-${stats.losses} • ${formatWinRate(stats.wins, stats.games)} wins • avg margin ${averagePips(stats.totalLoserPipsWhenWon, stats.wins)} pips`
+                : "No prior games recorded."}
+            </div>
+          </div>
+        ))}
+        <datalist id="war-peace-known-players">
+          {knownPlayers.map((player) => (
+            <option key={player.name} value={player.name} />
+          ))}
+        </datalist>
+      </div>
+
+      {!playersReady && gamePhase === "OPENING_ROLL" && (
+        <div
+          style={{
+            width: shellWidth,
+            margin: "0 auto clamp(7px, 0.8vw, 10px)",
+            color: "#fff2bc",
+            fontSize: "clamp(13px, 1.2vw, 15px)",
+            fontWeight: 900,
+            textAlign: "center",
+          }}
+        >
+          Enter two different player names to begin.
+        </div>
+      )}
+
+      <div
+        style={{
+          width: shellWidth,
+          margin: "0 auto clamp(7px, 0.8vw, 10px)",
+          display: "grid",
           gridTemplateColumns: "1.18fr 0.7fr 1.05fr 0.72fr 0.5fr",
           gap: 6,
           alignItems: "stretch",
@@ -2559,43 +2898,17 @@ export default function App() {
         <button
           style={{
             ...luxuryButton,
-            minWidth: 72,
+            minWidth: 92,
+            background: showRecords
+              ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
+              : luxuryButton.background,
+            color: showRecords ? "#1a0900" : luxuryButton.color,
           }}
           type="button"
-          onClick={saveGame}
-          title="Save this game in this browser on this computer"
+          onClick={() => setShowRecords((visible) => !visible)}
+          title="Show player records and recent game history"
         >
-          Save
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 72,
-            opacity: hasSavedGame ? 1 : 0.45,
-            cursor: hasSavedGame ? "pointer" : "not-allowed",
-          }}
-          type="button"
-          disabled={!hasSavedGame}
-          onClick={loadSavedGame}
-          title={hasSavedGame ? "Load the saved game from this browser" : "No saved game is available"}
-        >
-          Load
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 82,
-            opacity: hasSavedGame ? 1 : 0.45,
-            cursor: hasSavedGame ? "pointer" : "not-allowed",
-          }}
-          type="button"
-          disabled={!hasSavedGame}
-          onClick={clearSavedGame}
-          title={hasSavedGame ? "Clear the saved game from this browser" : "No saved game is available"}
-        >
-          Clear Save
+          Records
         </button>
       </div>
 
@@ -2624,7 +2937,7 @@ export default function App() {
               boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
             }}
           >
-            <div>Final: {finalResult.winner} defeated {finalResult.loser} in {mode} mode.</div>
+            <div>Final: {finalResult.winner === "White" ? cleanWhitePlayerName : cleanBlackPlayerName} defeated {finalResult.loser === "White" ? cleanWhitePlayerName : cleanBlackPlayerName} in {mode} mode.</div>
             <div style={{ fontSize: "0.9em", marginTop: 3 }}>
               {finalResult.winner} off: {finalResult.winnerOff} • {finalResult.loser} off: {finalResult.loserOff} • {finalResult.loser} pips remaining: {finalResult.loserPips}
             </div>
@@ -2689,6 +3002,75 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {showRecords && (
+        <div
+          style={{
+            width: shellWidth,
+            margin: "0 auto clamp(10px, 1vw, 14px)",
+            background: "linear-gradient(145deg, rgba(255,242,188,0.14), rgba(32,14,4,0.94))",
+            border: "3px solid rgba(226,171,87,0.72)",
+            borderRadius: 20,
+            padding: "10px 12px",
+            boxShadow: "0 12px 26px rgba(0,0,0,0.48)",
+            color: "#ffeab0",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900 }}>Player Records</div>
+            <div style={{ fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.9 }}>
+              Records are saved automatically on this browser when a game ends.
+            </div>
+          </div>
+
+          {leaderboard.length === 0 ? (
+            <div style={{ fontWeight: 800 }}>No completed games yet.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
+              {leaderboard.slice(0, 8).map((player) => (
+                <div
+                  key={playerRecordKey(player.name)}
+                  style={{
+                    border: "1px solid rgba(255,226,138,0.38)",
+                    borderRadius: 14,
+                    padding: "8px 10px",
+                    background: "rgba(0,0,0,0.22)",
+                  }}
+                >
+                  <div style={{ fontSize: "clamp(14px, 1.35vw, 18px)", fontWeight: 900, color: "#fff4c7" }}>{player.name}</div>
+                  <div style={{ fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, marginTop: 3 }}>
+                    Record: {player.wins}-{player.losses} • Win rate: {formatWinRate(player.wins, player.games)}
+                  </div>
+                  <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.92 }}>
+                    Avg winning margin: {averagePips(player.totalLoserPipsWhenWon, player.wins)} pips • WAR {player.war.wins}-{player.war.losses} • PEACE {player.peace.wins}-{player.peace.losses}
+                  </div>
+                  {Object.values(player.headToHead).length > 0 && (
+                    <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.9 }}>
+                      Vs. {Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].opponentName}: {Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].wins}-{Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].losses}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {recordBook.games.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.95 }}>
+              <strong>Recent:</strong>{" "}
+              {recordBook.games.slice(0, 3).map((game) => `${game.winnerPlayer} beat ${game.loserPlayer} (${game.mode}, ${game.reason === "RESIGNATION" ? "resignation" : "bear-off"}, ${game.loserPips} pips left)`).join("  •  ")}
+            </div>
+          )}
+        </div>
+      )}
 
       <div
         style={{
