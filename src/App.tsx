@@ -29,6 +29,20 @@ type OffState = {
   Black: number;
 };
 
+type WinReason = "BEAR_OFF" | "RESIGNATION";
+
+type FinalResult = {
+  winner: Player;
+  loser: Player;
+  reason: WinReason;
+  winnerOff: number;
+  loserOff: number;
+  winnerPips: number;
+  loserPips: number;
+  movesPlayed: number;
+  modeAtFinish: Mode;
+};
+
 type Sequence = {
   moves: Move[];
   totalHits: number;
@@ -85,6 +99,7 @@ type SavedGameState = {
   openingTurnMoveMade: boolean;
   openingTurnRequiresMove: boolean;
   winner: Player | null;
+  finalResult: FinalResult | null;
   message: string;
 };
 
@@ -571,6 +586,14 @@ function pointLabel(index: number): string {
   return index < 0 ? "bar" : `${index + 1}`;
 }
 
+function formatFinalResult(result: FinalResult): string {
+  if (result.reason === "RESIGNATION") {
+    return `${result.winner} wins by resignation. ${result.loser} resigned with ${result.loserOff} borne off and ${result.loserPips} pips remaining.`;
+  }
+
+  return `${result.winner} wins by bearing off all 15 checkers. ${result.loser} had ${result.loserOff} borne off and ${result.loserPips} pips remaining.`;
+}
+
 function describeMove(move: Move): string {
   if (move.isBearOff) return `Bear off from ${pointLabel(move.from)} with ${move.die}`;
   if (move.isBarEntry) return `Enter from bar to ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - HIT" : ""}`;
@@ -662,6 +685,7 @@ export default function App() {
   const [openingTurnMoveMade, setOpeningTurnMoveMade] = useState(false);
   const [openingTurnRequiresMove, setOpeningTurnRequiresMove] = useState(false);
   const [winner, setWinner] = useState<Player | null>(null);
+  const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [legalHelpActive, setLegalHelpActive] = useState(false);
@@ -796,6 +820,7 @@ export default function App() {
       openingTurnMoveMade,
       openingTurnRequiresMove,
       winner,
+      finalResult,
       message,
     };
 
@@ -870,6 +895,7 @@ export default function App() {
       setOpeningTurnMoveMade(parsed.openingTurnMoveMade);
       setOpeningTurnRequiresMove(parsed.openingTurnRequiresMove);
       setWinner(parsed.winner);
+      setFinalResult(parsed.finalResult ?? null);
       setConfirmResign(false);
       setWarningMessage(null);
       setLegalHelpActive(false);
@@ -897,9 +923,40 @@ export default function App() {
     return null;
   }
 
-  function endGame(player: Player): void {
+  function buildFinalResult(
+    player: Player,
+    reason: WinReason,
+    finalBoard: Point[] = board,
+    finalBar: BarState = bar,
+    finalOff: OffState = off
+  ): FinalResult {
+    const loser = opponent(player);
+
+    return {
+      winner: player,
+      loser,
+      reason,
+      winnerOff: finalOff[player],
+      loserOff: finalOff[loser],
+      winnerPips: calculatePipCount(finalBoard, player, finalBar),
+      loserPips: calculatePipCount(finalBoard, loser, finalBar),
+      movesPlayed: moveLog.length + (reason === "BEAR_OFF" ? 1 : 0),
+      modeAtFinish: mode,
+    };
+  }
+
+  function endGame(
+    player: Player,
+    reason: WinReason = "BEAR_OFF",
+    finalBoard: Point[] = board,
+    finalBar: BarState = bar,
+    finalOff: OffState = off
+  ): void {
+    const result = buildFinalResult(player, reason, finalBoard, finalBar, finalOff);
+
     setWinner(player);
-    setMessage(`${player} wins! Game over.`);
+    setFinalResult(result);
+    setMessage(formatFinalResult(result));
     playWinFanfare();
     flashBanner(`${player.toUpperCase()} WINS`, 3000);
     setRemainingDice([]);
@@ -909,6 +966,9 @@ export default function App() {
     setHoverPoint(null);
     setDragPosition(null);
     setConfirmResign(false);
+    setWarningMessage(null);
+    setLegalHelpActive(false);
+    setAssistSourcePoint(null);
     setGamePhase("GAME_OVER");
   }
 
@@ -930,7 +990,44 @@ export default function App() {
       return;
     }
 
-    endGame(opponent(currentPlayer));
+    endGame(opponent(currentPlayer), "RESIGNATION", board, bar, off);
+  }
+
+  function resetNewGame(): void {
+    setBoard(createStartingBoard());
+    setBar({ White: 0, Black: 0 });
+    setOff({ White: 0, Black: 0 });
+    setMode("WAR");
+    setCurrentPlayer("White");
+    setController("White");
+    setControlState("NORMAL");
+    setGamePhase("OPENING_ROLL");
+    setRemainingDice([]);
+    setSelectedPoint(null);
+    setDraggingPoint(null);
+    setHoverPoint(null);
+    setDragPosition(null);
+    setPreviewMoveKey(null);
+    setLastMove(null);
+    setShowAnalysis(false);
+    setMoveLog([]);
+    setTurnMoveCount(0);
+    setTurnBanner(null);
+    setDiceRolling(false);
+    setAnimatingMoveKey(null);
+    setMessage("Roll opening dice.");
+    setHistory([]);
+    setOpeningDice(null);
+    setOpeningWinner(null);
+    setAwaitingModeChoice(false);
+    setOpeningTurnMoveMade(false);
+    setOpeningTurnRequiresMove(false);
+    setWinner(null);
+    setFinalResult(null);
+    setConfirmResign(false);
+    setWarningMessage(null);
+    setLegalHelpActive(false);
+    setAssistSourcePoint(null);
   }
 
   async function rollOpening(): Promise<void> {
@@ -974,6 +1071,9 @@ export default function App() {
     setGamePhase("MODE_CHOICE");
     setOpeningTurnMoveMade(false);
     setOpeningTurnRequiresMove(false);
+    setWinner(null);
+    setFinalResult(null);
+    setConfirmResign(false);
     playWinFanfare();
     flashBanner(`${winner.toUpperCase()} WINS OPENING ROLL`, 3500);
     setMessage(`Opening roll - White: ${whiteDie}, Black: ${blackDie}. ${winner} chooses WAR or PEACE.`);
@@ -1005,6 +1105,9 @@ export default function App() {
     setOpeningTurnMoveMade(true);
     setOpeningTurnRequiresMove(false);
     setGamePhase("NORMAL_TURN");
+    setWinner(null);
+    setFinalResult(null);
+    setConfirmResign(false);
     setMessage("BEAR-OFF TEST: White should bear off as many as possible.");
   }
 
@@ -1035,6 +1138,9 @@ export default function App() {
     setOpeningTurnMoveMade(true);
     setOpeningTurnRequiresMove(false);
     setGamePhase("NORMAL_TURN");
+    setWinner(null);
+    setFinalResult(null);
+    setConfirmResign(false);
     setMessage("PEACE TEST: no-hit sequence should be preferred if available.");
   }
 
@@ -1162,8 +1268,8 @@ export default function App() {
 
     const completedWinner = winner ?? checkForWinner(off);
     if (completedWinner) {
-      if (winner === null) endGame(completedWinner);
-      setMessage(`${completedWinner} has already won. Game over.`);
+      if (winner === null) endGame(completedWinner, "BEAR_OFF", board, bar, off);
+      setMessage(finalResult ? formatFinalResult(finalResult) : `${completedWinner} has already won. Game over.`);
       return;
     }
 
@@ -1241,7 +1347,7 @@ export default function App() {
 
     const completedWinner = checkForWinner(result.off);
     if (completedWinner) {
-      endGame(completedWinner);
+      endGame(completedWinner, "BEAR_OFF", result.board, result.bar, result.off);
       return;
     }
 
@@ -1379,8 +1485,8 @@ export default function App() {
   function handlePointClick(index: number): void {
     const completedWinner = winner ?? checkForWinner(off);
     if (completedWinner) {
-      if (winner === null) endGame(completedWinner);
-      setMessage(`${completedWinner} has already won. Game over.`);
+      if (winner === null) endGame(completedWinner, "BEAR_OFF", board, bar, off);
+      setMessage(finalResult ? formatFinalResult(finalResult) : `${completedWinner} has already won. Game over.`);
       return;
     }
 
@@ -2434,6 +2540,22 @@ export default function App() {
           End Turn
         </button>
 
+        {gamePhase === "GAME_OVER" && (
+          <button
+            style={{
+              ...luxuryButton,
+              background: "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)",
+              color: "#1a0900",
+              minWidth: 110,
+            }}
+            type="button"
+            onClick={resetNewGame}
+            title="Start a new game from the opening roll."
+          >
+            New Game
+          </button>
+        )}
+
         <button
           style={{
             ...luxuryButton,
@@ -2485,7 +2607,29 @@ export default function App() {
           fontWeight: 700,
         }}
       >
-        {winner ? `${winner} wins! Game over.` : message}
+        {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : message}
+        {winner && finalResult && (
+          <div
+            style={{
+              margin: "9px auto 0",
+              width: "fit-content",
+              maxWidth: "min(92vw, 760px)",
+              background: "linear-gradient(145deg, #fff7c7, #b87816 58%, #5a2c05)",
+              color: "#1a0900",
+              border: "3px solid #ffe28a",
+              borderRadius: 18,
+              padding: "9px 16px",
+              fontSize: "clamp(14px, 1.45vw, 18px)",
+              fontWeight: 900,
+              boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div>Final: {finalResult.winner} defeated {finalResult.loser} in {mode} mode.</div>
+            <div style={{ fontSize: "0.9em", marginTop: 3 }}>
+              {finalResult.winner} off: {finalResult.winnerOff} • {finalResult.loser} off: {finalResult.loserOff} • {finalResult.loser} pips remaining: {finalResult.loserPips}
+            </div>
+          </div>
+        )}
         {turnGuidance && !winner && (
           <div
             style={{
