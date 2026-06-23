@@ -158,6 +158,8 @@ type PlayerRecordBook = {
 
 const PLAYER_RECORDS_KEY = "warPeaceBackgammonPlayerRecordsV1";
 const SAVE_KEY = "warPeaceBackgammonSaveV1";
+const BETA_PASSWORD = "warpeace1776";
+const BETA_ACCESS_KEY = "warPeaceBackgammonBetaAccessV1";
 const HOME_BAR: BarState = { White: 0, Black: 0 };
 const HOME_OFF: OffState = { White: 0, Black: 0 };
 
@@ -844,6 +846,9 @@ export default function App() {
   const [recordBook, setRecordBook] = useState<PlayerRecordBook>(() => loadPlayerRecordBook());
   const [showRecords, setShowRecords] = useState(false);
   const [hasSavedGame, setHasSavedGame] = useState(false);
+  const [betaUnlocked, setBetaUnlocked] = useState(() => window.localStorage.getItem(BETA_ACCESS_KEY) === "granted");
+  const [betaPasswordInput, setBetaPasswordInput] = useState("");
+  const [betaError, setBetaError] = useState<string | null>(null);
   const dragCompletionGuard = useRef(false);
 
   useEffect(() => {
@@ -1090,6 +1095,29 @@ export default function App() {
     setHasSavedGame(false);
     setConfirmResign(false);
     setMessage("Saved game cleared from this computer.");
+  }
+
+  function handleBetaUnlock(event: React.FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+
+    if (betaPasswordInput.trim() === BETA_PASSWORD) {
+      window.localStorage.setItem(BETA_ACCESS_KEY, "granted");
+      setBetaUnlocked(true);
+      setBetaError(null);
+      setBetaPasswordInput("");
+      playClickSound();
+      return;
+    }
+
+    setBetaError("Incorrect beta password. Please try again.");
+    playErrorSound();
+  }
+
+  function clearBetaAccess(): void {
+    window.localStorage.removeItem(BETA_ACCESS_KEY);
+    setBetaUnlocked(false);
+    setBetaPasswordInput("");
+    setBetaError(null);
   }
 
   function recordCompletedGame(result: FinalResult): void {
@@ -2362,6 +2390,97 @@ export default function App() {
     boxShadow: "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
     cursor: "pointer",
   };
+
+  if (!betaUnlocked) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
+          color: "#f9e8bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          fontFamily: "Georgia, 'Times New Roman', serif",
+        }}
+      >
+        <form
+          onSubmit={handleBetaUnlock}
+          style={{
+            width: "min(560px, 94vw)",
+            borderRadius: 28,
+            border: "3px solid #b8792f",
+            background: "linear-gradient(145deg, rgba(45,20,8,0.96), rgba(8,3,1,0.98))",
+            boxShadow: "0 24px 70px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,225,150,0.22)",
+            padding: "clamp(24px, 4vw, 42px)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "clamp(30px, 4vw, 48px)", fontWeight: 900, letterSpacing: 1.2 }}>
+            War &amp; Peace Backgammon
+          </div>
+          <div
+            style={{
+              marginTop: 10,
+              color: "#d7ba7a",
+              fontSize: "clamp(18px, 2vw, 24px)",
+              fontWeight: 800,
+            }}
+          >
+            Private Beta
+          </div>
+          <div style={{ marginTop: 24, fontSize: "clamp(16px, 1.5vw, 20px)", lineHeight: 1.45, color: "#f0d9a4" }}>
+            Enter the beta password to open the game. Access will be remembered on this browser.
+          </div>
+          <input
+            type="password"
+            value={betaPasswordInput}
+            onChange={(event) => {
+              setBetaPasswordInput(event.target.value);
+              setBetaError(null);
+            }}
+            autoFocus
+            aria-label="Beta password"
+            style={{
+              marginTop: 28,
+              width: "100%",
+              boxSizing: "border-box",
+              borderRadius: 18,
+              border: "2px solid #c8944b",
+              background: "#fff8e6",
+              color: "#201000",
+              fontSize: "clamp(22px, 2.4vw, 30px)",
+              padding: "15px 18px",
+              outline: "none",
+              fontFamily: "Georgia, 'Times New Roman', serif",
+              textAlign: "center",
+              fontWeight: 800,
+            }}
+          />
+          {betaError && (
+            <div style={{ marginTop: 14, color: "#ff9a89", fontWeight: 900, fontSize: "clamp(15px, 1.4vw, 18px)" }}>
+              {betaError}
+            </div>
+          )}
+          <button
+            type="submit"
+            style={{
+              ...luxuryButton,
+              marginTop: 24,
+              fontSize: "clamp(18px, 1.7vw, 23px)",
+              padding: "14px 30px",
+              width: "100%",
+              background: "linear-gradient(145deg, #f4d38e, #a35d1e)",
+              color: "#1a0900",
+            }}
+          >
+            Enter Game
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div
