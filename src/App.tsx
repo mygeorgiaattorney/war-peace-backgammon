@@ -850,6 +850,7 @@ export default function App() {
   const [betaPasswordInput, setBetaPasswordInput] = useState("");
   const [betaError, setBetaError] = useState<string | null>(null);
   const dragCompletionGuard = useRef(false);
+  const autoPassTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
@@ -919,10 +920,8 @@ export default function App() {
     !diceRolling &&
     turnIsPlayable &&
     !awaitingModeChoice &&
-    (
-      (turnMoveCount > 0 && (remainingDice.length === 0 || legalMoves.length === 0)) ||
-      (turnMoveCount === 0 && remainingDice.length > 0 && legalMoves.length === 0)
-    );
+    turnMoveCount > 0 &&
+    (remainingDice.length === 0 || legalMoves.length === 0);
   const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
   const whitePipCount = calculatePipCount(board, "White", bar);
   const blackPipCount = calculatePipCount(board, "Black", bar);
@@ -1462,17 +1461,27 @@ export default function App() {
       }
     }
 
-    let dice: number[];
+    const rolledDoubles = d1 === d2;
+    const dice = rolledDoubles ? [d1, d1, d1, d1] : [d1, d2];
     let nextMode = mode;
 
-    if (d1 === d2) {
-      dice = [d1, d1, d1, d1];
-      nextMode = mode === "WAR" ? "PEACE" : "WAR";
-      setMode(nextMode);
-      flashBanner(`DOUBLES - ${nextMode}`, 3000);
-    } else {
-      dice = [d1, d2];
+    if (rolledDoubles) {
+      const switchedMode: Mode = mode === "WAR" ? "PEACE" : "WAR";
+      const switchedModeAnalysis = analyzeLegality(board, nextPlayer, dice, switchedMode, bar, off, "NORMAL");
+
+      if (switchedModeAnalysis.legalMoves.length > 0) {
+        nextMode = switchedMode;
+        setMode(nextMode);
+        flashBanner(`DOUBLES - ${nextMode}`, 3000);
+      } else {
+        // Blocked doubles do not change doctrine/theme. The dice still display,
+        // then the automatic no-move pass effect will advance the game.
+        nextMode = mode;
+      }
     }
+
+    const nextLegalAnalysis = analyzeLegality(board, nextPlayer, dice, nextMode, bar, off, "NORMAL");
+    const noLegalMoves = nextLegalAnalysis.legalMoves.length === 0;
 
     setCurrentPlayer(nextPlayer);
     setGamePhase("NORMAL_TURN");
@@ -1487,7 +1496,12 @@ export default function App() {
     setPreviewMoveKey(null);
     setLastMove(null);
     setHistory([]);
-    setMessage(`${nextPlayer}'s turn. Rolled ${dice.join(", ")}.`);
+    setTurnMoveCount(0);
+    setMessage(
+      noLegalMoves
+        ? `${nextPlayer} rolled ${dice.join(", ")}. No legal moves — turn passes.`
+        : `${nextPlayer}'s turn. Rolled ${dice.join(", ")}.`
+    );
   }
 
   function undoMove(): void {
@@ -1758,6 +1772,43 @@ export default function App() {
       window.removeEventListener("keydown", handleWindowKeyDown);
     };
   }, [draggingPoint, legalMoves]);
+
+  useEffect(() => {
+    if (autoPassTimerRef.current !== null) {
+      clearTimeout(autoPassTimerRef.current);
+      autoPassTimerRef.current = null;
+    }
+
+    const shouldAutoPassNoMoveTurn =
+      winner === null &&
+      !diceRolling &&
+      turnIsPlayable &&
+      !awaitingModeChoice &&
+      remainingDice.length > 0 &&
+      legalMoves.length === 0 &&
+      turnMoveCount === 0;
+
+    if (!shouldAutoPassNoMoveTurn) return;
+
+    setSelectedPoint(null);
+    setPreviewMoveKey(null);
+    setLegalHelpActive(false);
+    setAssistSourcePoint(null);
+    setMessage(`${currentPlayer} rolled ${remainingDice.join(", ")}. No legal moves — turn passes.`);
+    flashBanner("NO MOVES", 1800);
+
+    autoPassTimerRef.current = setTimeout(() => {
+      autoPassTimerRef.current = null;
+      void nextTurn();
+    }, 2000);
+
+    return () => {
+      if (autoPassTimerRef.current !== null) {
+        clearTimeout(autoPassTimerRef.current);
+        autoPassTimerRef.current = null;
+      }
+    };
+  }, [awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner]);
 
   function handlePointClick(index: number): void {
     const completedWinner = winner ?? checkForWinner(off);
