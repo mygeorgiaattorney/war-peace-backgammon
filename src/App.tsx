@@ -849,8 +849,12 @@ export default function App() {
   const [betaUnlocked, setBetaUnlocked] = useState(() => window.localStorage.getItem(BETA_ACCESS_KEY) === "granted");
   const [betaPasswordInput, setBetaPasswordInput] = useState("");
   const [betaError, setBetaError] = useState<string | null>(null);
+  const [autoTestRunning, setAutoTestRunning] = useState(false);
+  const [autoTestLog, setAutoTestLog] = useState<string[]>([]);
+  const [autoTestError, setAutoTestError] = useState<string | null>(null);
   const dragCompletionGuard = useRef(false);
   const autoPassTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoTestStepRef = useRef(0);
 
   useEffect(() => {
     setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
@@ -923,6 +927,11 @@ export default function App() {
     turnMoveCount > 0 &&
     (remainingDice.length === 0 || legalMoves.length === 0);
   const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
+  const autoTestStatus = autoTestError
+    ? "Stopped - error found"
+    : autoTestRunning
+    ? "Running"
+    : "Paused";
   const whitePipCount = calculatePipCount(board, "White", bar);
   const blackPipCount = calculatePipCount(board, "Black", bar);
   const knownPlayers = useMemo(
@@ -1298,6 +1307,7 @@ export default function App() {
     setWarningMessage(null);
     setLegalHelpActive(false);
     setAssistSourcePoint(null);
+    setAutoTestError(null);
   }
 
   async function rollOpening(): Promise<void> {
@@ -1663,6 +1673,142 @@ export default function App() {
     );
   }
 
+  function appendAutoTestLog(line: string): void {
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setAutoTestLog((log) => [`${time} - ${line}`, ...log].slice(0, 80));
+  }
+
+  function validateAutoTestBoard(): string | null {
+    for (let index = 0; index < board.length; index += 1) {
+      const point = board[index];
+      if (point.count < 0) return `Point ${index + 1} has a negative checker count.`;
+      if (point.owner === null && point.count !== 0) return `Point ${index + 1} has ${point.count} checkers but no owner.`;
+      if (point.owner !== null && point.count <= 0) return `Point ${index + 1} is owned by ${point.owner} but has no checkers.`;
+    }
+
+    const whiteTotal =
+      board.reduce((total, point) => total + (point.owner === "White" ? point.count : 0), 0) +
+      bar.White +
+      off.White;
+    const blackTotal =
+      board.reduce((total, point) => total + (point.owner === "Black" ? point.count : 0), 0) +
+      bar.Black +
+      off.Black;
+
+    if (whiteTotal !== 15) return `White has ${whiteTotal} total checkers instead of 15.`;
+    if (blackTotal !== 15) return `Black has ${blackTotal} total checkers instead of 15.`;
+    if (off.White > 15 || off.Black > 15) return `Bear-off count exceeded 15. White off ${off.White}, Black off ${off.Black}.`;
+    return null;
+  }
+
+  function chooseAutoTestMove(): Move | null {
+    if (legalMoves.length === 0) return null;
+
+    const barEntry = legalMoves.find((move) => move.isBarEntry);
+    if (barEntry) return barEntry;
+
+    const bearOff = legalMoves.find((move) => move.isBearOff);
+    if (bearOff && legalMoves.length <= 2) return bearOff;
+
+    const hit = legalMoves.find((move) => move.isHit);
+    if (mode === "WAR" && hit) return hit;
+
+    return legalMoves[0];
+  }
+
+  function runAutoTestStep(): void {
+    if (diceRolling || autoTestError) return;
+
+    const boardProblem = validateAutoTestBoard();
+    if (boardProblem) {
+      setAutoTestError(boardProblem);
+      setAutoTestRunning(false);
+      appendAutoTestLog(`AUTO TEST STOPPED: ${boardProblem}`);
+      setMessage(`AUTO TEST STOPPED: ${boardProblem}`);
+      return;
+    }
+
+    autoTestStepRef.current += 1;
+    if (autoTestStepRef.current > 1200) {
+      const stopReason = "Auto test reached 1200 steps without a winner. Possible loop or very long game.";
+      setAutoTestError(stopReason);
+      setAutoTestRunning(false);
+      appendAutoTestLog(`AUTO TEST STOPPED: ${stopReason}`);
+      setMessage(stopReason);
+      return;
+    }
+
+    if (winner || gamePhase === "GAME_OVER") {
+      setAutoTestRunning(false);
+      appendAutoTestLog(`Game over detected. ${winner ? `${winner} won.` : "Winner already recorded."}`);
+      return;
+    }
+
+    if (gamePhase === "OPENING_ROLL") {
+      appendAutoTestLog("Rolling opening dice.");
+      void rollOpening();
+      return;
+    }
+
+    if (canChooseDoctrine) {
+      const chosenMode: Mode = autoTestStepRef.current % 2 === 0 ? "WAR" : "PEACE";
+      appendAutoTestLog(`${openingWinner ?? "Opening winner"} chooses ${chosenMode}.`);
+      chooseMode(chosenMode);
+      return;
+    }
+
+    if (!turnIsPlayable || awaitingModeChoice) return;
+
+    if (canSubmitTurn) {
+      appendAutoTestLog(`${currentPlayer} ends turn.`);
+      submitTurn();
+      return;
+    }
+
+    if (remainingDice.length > 0 && legalMoves.length === 0) {
+      appendAutoTestLog(`${currentPlayer} has no legal moves with dice ${remainingDice.join(", ")}. Waiting for auto-pass.`);
+      return;
+    }
+
+    const move = chooseAutoTestMove();
+    if (!move) {
+      appendAutoTestLog(`${currentPlayer} has no move to select.`);
+      return;
+    }
+
+    appendAutoTestLog(`${currentPlayer} ${mode}: ${describeMove(move)}`);
+    executeMove(move);
+  }
+
+  function startAutoTest(): void {
+    setAutoTestError(null);
+    autoTestStepRef.current = 0;
+    setAutoTestRunning(true);
+    setShowMoveLog(true);
+    if (gamePhase === "GAME_OVER") {
+      resetNewGame();
+    }
+    appendAutoTestLog("Auto Test started.");
+  }
+
+  function pauseAutoTest(): void {
+    setAutoTestRunning(false);
+    appendAutoTestLog("Auto Test paused.");
+  }
+
+  function stopAutoTest(): void {
+    setAutoTestRunning(false);
+    setAutoTestError(null);
+    autoTestStepRef.current = 0;
+    appendAutoTestLog("Auto Test stopped.");
+  }
+
+  function stepAutoTestOnce(): void {
+    setAutoTestError(null);
+    appendAutoTestLog("Manual auto-test step.");
+    runAutoTestStep();
+  }
+
   function beginDrag(index: number, event?: React.PointerEvent<HTMLDivElement>): void {
     if (awaitingModeChoice || remainingDice.length === 0 || bar[currentPlayer] > 0) return;
 
@@ -1809,6 +1955,36 @@ export default function App() {
       }
     };
   }, [awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner]);
+
+  useEffect(() => {
+    if (!autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
+
+    const delay = remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0 ? 2300 : 850;
+    const timer = window.setTimeout(() => {
+      runAutoTestStep();
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    autoTestRunning,
+    autoTestError,
+    diceRolling,
+    draggingPoint,
+    gamePhase,
+    awaitingModeChoice,
+    canChooseDoctrine,
+    canSubmitTurn,
+    turnIsPlayable,
+    currentPlayer,
+    mode,
+    winner,
+    remainingDice,
+    legalMoves.length,
+    turnMoveCount,
+    board,
+    bar,
+    off,
+  ]);
 
   function handlePointClick(index: number): void {
     const completedWinner = winner ?? checkForWinner(off);
@@ -3080,6 +3256,46 @@ export default function App() {
         >
           Records
         </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 104,
+            background: autoTestRunning
+              ? "linear-gradient(145deg, #ffefb0, #b06100 72%, #3a1600)"
+              : luxuryButton.background,
+            color: autoTestRunning ? "#180700" : luxuryButton.color,
+          }}
+          type="button"
+          onClick={autoTestRunning ? pauseAutoTest : startAutoTest}
+          title="Let the computer play both sides slowly for bug testing."
+        >
+          {autoTestRunning ? "Pause Auto Test" : "Start Auto Test"}
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 92,
+            opacity: diceRolling || autoTestRunning ? 0.45 : 1,
+            cursor: diceRolling || autoTestRunning ? "not-allowed" : "pointer",
+          }}
+          type="button"
+          onClick={stepAutoTestOnce}
+          disabled={diceRolling || autoTestRunning}
+          title="Run one automated testing step."
+        >
+          Step Test
+        </button>
+
+        <button
+          style={{ ...luxuryButton, minWidth: 82 }}
+          type="button"
+          onClick={stopAutoTest}
+          title="Stop Auto Test and clear any auto-test error."
+        >
+          Stop Test
+        </button>
       </div>
 
       <div
@@ -3172,6 +3388,72 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {(autoTestLog.length > 0 || autoTestError || autoTestRunning) && (
+        <div
+          style={{
+            margin: "10px auto 0",
+            width: "min(94vw, 940px)",
+            background: autoTestError
+              ? "linear-gradient(145deg, rgba(90,0,0,0.92), rgba(20,0,0,0.96))"
+              : "linear-gradient(145deg, rgba(35,20,8,0.94), rgba(8,3,1,0.96))",
+            border: autoTestError ? "3px solid #ffb08e" : "2px solid rgba(255,213,128,0.55)",
+            borderRadius: 18,
+            padding: "10px 14px",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.55)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              color: autoTestError ? "#ffe8d4" : "#ffe6ad",
+              fontWeight: 900,
+              fontSize: "clamp(14px, 1.4vw, 18px)",
+              marginBottom: 6,
+            }}
+          >
+            <span>Computer vs Computer Auto Test: {autoTestStatus}</span>
+            <span>Steps: {autoTestStepRef.current}</span>
+          </div>
+          {autoTestError && (
+            <div
+              style={{
+                color: "#fff4d6",
+                background: "rgba(255,0,0,0.18)",
+                border: "1px solid rgba(255,210,160,0.5)",
+                borderRadius: 12,
+                padding: "7px 10px",
+                marginBottom: 7,
+                fontWeight: 900,
+              }}
+            >
+              AUTO TEST STOPPED — {autoTestError}
+            </div>
+          )}
+          <div
+            style={{
+              maxHeight: 135,
+              overflowY: "auto",
+              fontSize: "clamp(12px, 1.15vw, 14px)",
+              lineHeight: 1.35,
+              color: "#ffe7b7",
+              textAlign: "left",
+            }}
+          >
+            {autoTestLog.length === 0 ? (
+              <div>Start Auto Test to let the computer play both sides and look for rule-engine errors.</div>
+            ) : (
+              autoTestLog.slice(0, 12).map((entry, index) => (
+                <div key={`${entry}-${index}`}>{entry}</div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {showRecords && (
         <div
