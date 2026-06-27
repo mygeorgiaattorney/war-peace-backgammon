@@ -4,6 +4,7 @@ type Player = "White" | "Black";
 type Mode = "WAR" | "PEACE";
 type ControlState = "NORMAL" | "ENEMY_CONTROL";
 type GamePhase = "OPENING_ROLL" | "MODE_CHOICE" | "OPENING_TURN" | "NORMAL_TURN" | "GAME_OVER";
+type AutoTestSpeed = "SLOW" | "FAST" | "VERY_FAST" | "TURBO";
 
 type Point = {
   owner: Player | null;
@@ -156,10 +157,202 @@ type PlayerRecordBook = {
   games: PlayerGameRecord[];
 };
 
+type AutoTestGameResult = {
+  gameNumber: number;
+  completedAt: string;
+  winner: Player | null;
+  openingWinner: Player | null;
+  startingMode: Mode | null;
+  steps: number;
+  noMovePasses: number;
+  winnerGreatestDeficitPips: number;
+};
+
+type AutoTestReport = {
+  version: 1;
+  startedAt: string;
+  updatedAt: string;
+  targetGames: number;
+  stopReason: string;
+  games: AutoTestGameResult[];
+};
+
+type AutoTestSummary = {
+  targetGames: number;
+  completedGames: number;
+  whiteWins: number;
+  blackWins: number;
+  totalSteps: number;
+  shortestGameSteps: number;
+  longestGameSteps: number;
+  averageGameSteps: number;
+  noMovePasses: number;
+  openingWinnerWins: number;
+  openingWinnerLosses: number;
+  warStartGames: number;
+  warStartWins: number;
+  peaceStartGames: number;
+  peaceStartWins: number;
+  greatestComebackPips: number;
+  greatestComebackSummary: string;
+  stopReason: string;
+};
+
 const PLAYER_RECORDS_KEY = "warPeaceBackgammonPlayerRecordsV1";
+const AUTO_TEST_REPORT_KEY = "warPeaceBackgammonAutoTestReportV1";
 const SAVE_KEY = "warPeaceBackgammonSaveV1";
 const BETA_PASSWORD = "warpeace1776";
 const BETA_ACCESS_KEY = "warPeaceBackgammonBetaAccessV1";
+const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
+  SLOW: "Slow",
+  FAST: "Fast",
+  VERY_FAST: "Very Fast",
+  TURBO: "Turbo",
+};
+
+const AUTO_TEST_DELAY_MS: Record<AutoTestSpeed, number> = {
+  SLOW: 850,
+  FAST: 220,
+  VERY_FAST: 55,
+  TURBO: 1,
+};
+
+const AUTO_TEST_NO_MOVE_DELAY_MS: Record<AutoTestSpeed, number> = {
+  SLOW: 2300,
+  FAST: 450,
+  VERY_FAST: 90,
+  TURBO: 1,
+};
+
+const AUTO_TEST_DICE_DELAY_MS: Record<AutoTestSpeed, number> = {
+  SLOW: 650,
+  FAST: 90,
+  VERY_FAST: 18,
+  TURBO: 0,
+};
+
+function createEmptyAutoTestReport(targetGames = 1, stopReason = "Not started."): AutoTestReport {
+  const now = new Date().toISOString();
+  return {
+    version: 1,
+    startedAt: now,
+    updatedAt: now,
+    targetGames,
+    stopReason,
+    games: [],
+  };
+}
+
+function loadAutoTestReport(): AutoTestReport {
+  try {
+    const stored = window.localStorage.getItem(AUTO_TEST_REPORT_KEY);
+    if (!stored) return createEmptyAutoTestReport(1);
+    const parsed = JSON.parse(stored) as AutoTestReport;
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.games)) return createEmptyAutoTestReport(1);
+    return parsed;
+  } catch {
+    return createEmptyAutoTestReport(1);
+  }
+}
+
+function saveAutoTestReport(report: AutoTestReport): void {
+  window.localStorage.setItem(AUTO_TEST_REPORT_KEY, JSON.stringify(report));
+}
+
+function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
+  const games = report.games;
+  const completedGames = games.length;
+  const whiteWins = games.filter((game) => game.winner === "White").length;
+  const blackWins = games.filter((game) => game.winner === "Black").length;
+  const totalSteps = games.reduce((total, game) => total + game.steps, 0);
+  const noMovePasses = games.reduce((total, game) => total + game.noMovePasses, 0);
+  const shortestGameSteps = completedGames === 0 ? 0 : Math.min(...games.map((game) => game.steps));
+  const longestGameSteps = completedGames === 0 ? 0 : Math.max(...games.map((game) => game.steps));
+  const averageGameSteps = completedGames === 0 ? 0 : Math.round(totalSteps / completedGames);
+  const openingWinnerWins = games.filter((game) => game.openingWinner && game.winner === game.openingWinner).length;
+  const openingWinnerLosses = games.filter((game) => game.openingWinner && game.winner && game.winner !== game.openingWinner).length;
+  const warStartGames = games.filter((game) => game.startingMode === "WAR").length;
+  const warStartWins = games.filter((game) => game.startingMode === "WAR" && game.winner === game.openingWinner).length;
+  const peaceStartGames = games.filter((game) => game.startingMode === "PEACE").length;
+  const peaceStartWins = games.filter((game) => game.startingMode === "PEACE" && game.winner === game.openingWinner).length;
+  const greatestComebackGame = games.reduce<AutoTestGameResult | null>((best, game) => {
+    if (!best || game.winnerGreatestDeficitPips > best.winnerGreatestDeficitPips) return game;
+    return best;
+  }, null);
+  const greatestComebackPips = greatestComebackGame?.winnerGreatestDeficitPips ?? 0;
+  const greatestComebackSummary = greatestComebackGame && greatestComebackPips > 0
+    ? `Game ${greatestComebackGame.gameNumber}: ${greatestComebackGame.winner ?? "Unknown"} won after trailing by ${greatestComebackPips} pips.`
+    : "No comeback deficit recorded yet.";
+
+  return {
+    targetGames: report.targetGames,
+    completedGames,
+    whiteWins,
+    blackWins,
+    totalSteps,
+    shortestGameSteps,
+    longestGameSteps,
+    averageGameSteps,
+    noMovePasses,
+    openingWinnerWins,
+    openingWinnerLosses,
+    warStartGames,
+    warStartWins,
+    peaceStartGames,
+    peaceStartWins,
+    greatestComebackPips,
+    greatestComebackSummary,
+    stopReason: report.stopReason,
+  };
+}
+
+function createAutoTestSummary(targetGames = 1): AutoTestSummary {
+  return summarizeAutoTestReport(createEmptyAutoTestReport(targetGames));
+}
+
+function formatPercent(numerator: number, denominator: number): string {
+  if (denominator <= 0) return "0%";
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function formatAutoTestReportText(report: AutoTestReport): string {
+  const summary = summarizeAutoTestReport(report);
+  const lines = [
+    "WAR & PEACE BACKGAMMON AUTO TEST REPORT",
+    `Started: ${new Date(report.startedAt).toLocaleString()}`,
+    `Updated: ${new Date(report.updatedAt).toLocaleString()}`,
+    `Stop reason: ${report.stopReason}`,
+    "",
+    `Games completed: ${summary.completedGames}/${summary.targetGames}`,
+    `White wins: ${summary.whiteWins}`,
+    `Black wins: ${summary.blackWins}`,
+    `White win rate: ${formatPercent(summary.whiteWins, summary.completedGames)}`,
+    `Black win rate: ${formatPercent(summary.blackWins, summary.completedGames)}`,
+    "",
+    `Opening roll winner wins: ${summary.openingWinnerWins}`,
+    `Opening roll loser wins: ${summary.openingWinnerLosses}`,
+    `Opening winner win rate: ${formatPercent(summary.openingWinnerWins, summary.openingWinnerWins + summary.openingWinnerLosses)}`,
+    "",
+    `WAR-start games: ${summary.warStartGames}`,
+    `WAR-start chooser wins: ${summary.warStartWins} (${formatPercent(summary.warStartWins, summary.warStartGames)})`,
+    `PEACE-start games: ${summary.peaceStartGames}`,
+    `PEACE-start chooser wins: ${summary.peaceStartWins} (${formatPercent(summary.peaceStartWins, summary.peaceStartGames)})`,
+    "",
+    `Average game length: ${summary.averageGameSteps} steps`,
+    `Shortest game: ${summary.shortestGameSteps} steps`,
+    `Longest game: ${summary.longestGameSteps} steps`,
+    `Total no-move passes: ${summary.noMovePasses}`,
+    `Greatest comeback: ${summary.greatestComebackSummary}`,
+    "",
+    "Recent games:",
+    ...report.games.slice(-20).map((game) =>
+      `Game ${game.gameNumber}: winner=${game.winner ?? "Unknown"}, openingWinner=${game.openingWinner ?? "Unknown"}, start=${game.startingMode ?? "Unknown"}, steps=${game.steps}, noMoves=${game.noMovePasses}, comeback=${game.winnerGreatestDeficitPips}`
+    ),
+  ];
+
+  return lines.join("\n");
+}
+
 const HOME_BAR: BarState = { White: 0, Black: 0 };
 const HOME_OFF: OffState = { White: 0, Black: 0 };
 
@@ -850,11 +1043,26 @@ export default function App() {
   const [betaPasswordInput, setBetaPasswordInput] = useState("");
   const [betaError, setBetaError] = useState<string | null>(null);
   const [autoTestRunning, setAutoTestRunning] = useState(false);
+  const [autoTestSpeed, setAutoTestSpeed] = useState<AutoTestSpeed>("FAST");
   const [autoTestLog, setAutoTestLog] = useState<string[]>([]);
   const [autoTestError, setAutoTestError] = useState<string | null>(null);
+  const [autoTestReport, setAutoTestReport] = useState<AutoTestReport>(() => loadAutoTestReport());
+  const [autoTestSummary, setAutoTestSummary] = useState<AutoTestSummary>(() => summarizeAutoTestReport(loadAutoTestReport()));
   const dragCompletionGuard = useRef(false);
   const autoPassTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoTestStepRef = useRef(0);
+  const autoTestGameStepRef = useRef(0);
+  const autoTestTargetGamesRef = useRef(1);
+  const autoTestCompletedGamesRef = useRef(0);
+  const autoTestWhiteWinsRef = useRef(0);
+  const autoTestBlackWinsRef = useRef(0);
+  const autoTestTotalStepsRef = useRef(0);
+  const autoTestLongestGameStepsRef = useRef(0);
+  const autoTestNoMovePassesRef = useRef(0);
+  const autoTestGameNoMovePassesRef = useRef(0);
+  const autoTestCurrentStartModeRef = useRef<Mode | null>(null);
+  const autoTestCurrentOpeningWinnerRef = useRef<Player | null>(null);
+  const autoTestMaxDeficitRef = useRef<Record<Player, number>>({ White: 0, Black: 0 });
 
   useEffect(() => {
     setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
@@ -952,7 +1160,10 @@ export default function App() {
 
   async function animateDiceRoll(): Promise<void> {
     setDiceRolling(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    const delay = autoTestRunning ? AUTO_TEST_DICE_DELAY_MS[autoTestSpeed] : 650;
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
     setDiceRolling(false);
   }
 
@@ -1234,7 +1445,7 @@ export default function App() {
 
     setWinner(player);
     setFinalResult(result);
-    recordCompletedGame(result);
+    if (!autoTestRunning) recordCompletedGame(result);
     setMessage(formatFinalResult(result));
     playWinFanfare();
     flashBanner(`${player.toUpperCase()} WINS`, 3000);
@@ -1675,7 +1886,76 @@ export default function App() {
 
   function appendAutoTestLog(line: string): void {
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    setAutoTestLog((log) => [`${time} - ${line}`, ...log].slice(0, 80));
+    setAutoTestLog((log) => [`${time} - ${line}`, ...log].slice(0, 120));
+  }
+
+  function publishAutoTestReport(report: AutoTestReport): void {
+    const updatedReport = { ...report, updatedAt: new Date().toISOString() };
+    saveAutoTestReport(updatedReport);
+    setAutoTestReport(updatedReport);
+    setAutoTestSummary(summarizeAutoTestReport(updatedReport));
+  }
+
+  function updateAutoTestSummary(): void {
+    setAutoTestSummary(summarizeAutoTestReport(autoTestReport));
+  }
+
+  function setAutoTestStopReason(stopReason: string): void {
+    publishAutoTestReport({ ...autoTestReport, stopReason });
+  }
+
+  function updateAutoTestPipDeficits(): void {
+    const whitePips = calculatePipCount(board, "White", bar);
+    const blackPips = calculatePipCount(board, "Black", bar);
+    autoTestMaxDeficitRef.current = {
+      White: Math.max(autoTestMaxDeficitRef.current.White, Math.max(0, whitePips - blackPips)),
+      Black: Math.max(autoTestMaxDeficitRef.current.Black, Math.max(0, blackPips - whitePips)),
+    };
+  }
+
+  function resetAutoTestCurrentGameTrackers(): void {
+    autoTestGameStepRef.current = 0;
+    autoTestGameNoMovePassesRef.current = 0;
+    autoTestCurrentStartModeRef.current = null;
+    autoTestCurrentOpeningWinnerRef.current = null;
+    autoTestMaxDeficitRef.current = { White: 0, Black: 0 };
+  }
+
+  function resetAutoTestCounters(targetGames: number): void {
+    autoTestStepRef.current = 0;
+    resetAutoTestCurrentGameTrackers();
+    autoTestTargetGamesRef.current = targetGames;
+    autoTestCompletedGamesRef.current = 0;
+    autoTestWhiteWinsRef.current = 0;
+    autoTestBlackWinsRef.current = 0;
+    autoTestTotalStepsRef.current = 0;
+    autoTestLongestGameStepsRef.current = 0;
+    autoTestNoMovePassesRef.current = 0;
+    const freshReport = createEmptyAutoTestReport(targetGames, "Running.");
+    publishAutoTestReport(freshReport);
+    setAutoTestSummary(createAutoTestSummary(targetGames));
+  }
+
+  async function copyAutoTestReport(): Promise<void> {
+    const reportText = formatAutoTestReportText(autoTestReport);
+    try {
+      await navigator.clipboard.writeText(reportText);
+      appendAutoTestLog("Auto Test report copied to clipboard.");
+      setMessage("Auto Test report copied. Paste it into an email, text, or ChatGPT.");
+    } catch {
+      appendAutoTestLog("Could not copy automatically. Browser clipboard permission was denied.");
+      setMessage("Copy failed. Browser clipboard permission was denied.");
+    }
+  }
+
+  function clearAutoTestReport(): void {
+    const freshReport = createEmptyAutoTestReport(1, "Cleared.");
+    saveAutoTestReport(freshReport);
+    setAutoTestReport(freshReport);
+    setAutoTestSummary(summarizeAutoTestReport(freshReport));
+    setAutoTestLog([]);
+    setAutoTestError(null);
+    appendAutoTestLog("Auto Test report cleared.");
   }
 
   function validateAutoTestBoard(): string | null {
@@ -1716,42 +1996,103 @@ export default function App() {
     return legalMoves[0];
   }
 
+  function stopAutoTestWithError(reason: string): void {
+    setAutoTestError(reason);
+    setAutoTestRunning(false);
+    setAutoTestStopReason(`ERROR: ${reason}`);
+    appendAutoTestLog(`AUTO TEST STOPPED: ${reason}`);
+    setMessage(`AUTO TEST STOPPED: ${reason}`);
+  }
+
+  function completeAutoTestGame(winningPlayer: Player | null): void {
+    const resolvedWinner = winningPlayer ?? finalResult?.winner ?? null;
+    autoTestCompletedGamesRef.current += 1;
+    autoTestLongestGameStepsRef.current = Math.max(autoTestLongestGameStepsRef.current, autoTestGameStepRef.current);
+
+    if (resolvedWinner === "White") autoTestWhiteWinsRef.current += 1;
+    if (resolvedWinner === "Black") autoTestBlackWinsRef.current += 1;
+
+    const gameResult: AutoTestGameResult = {
+      gameNumber: autoTestCompletedGamesRef.current,
+      completedAt: new Date().toISOString(),
+      winner: resolvedWinner,
+      openingWinner: autoTestCurrentOpeningWinnerRef.current ?? openingWinner,
+      startingMode: autoTestCurrentStartModeRef.current,
+      steps: autoTestGameStepRef.current,
+      noMovePasses: autoTestGameNoMovePassesRef.current,
+      winnerGreatestDeficitPips: resolvedWinner ? autoTestMaxDeficitRef.current[resolvedWinner] : 0,
+    };
+
+    const nextReport: AutoTestReport = {
+      ...autoTestReport,
+      stopReason:
+        autoTestCompletedGamesRef.current >= autoTestTargetGamesRef.current
+          ? `Completed requested ${autoTestTargetGamesRef.current} game(s).`
+          : `Running. Completed ${autoTestCompletedGamesRef.current} of ${autoTestTargetGamesRef.current}.`,
+      games: [...autoTestReport.games, gameResult],
+    };
+    publishAutoTestReport(nextReport);
+
+    appendAutoTestLog(
+      `Game ${autoTestCompletedGamesRef.current}/${autoTestTargetGamesRef.current} complete. ${
+        resolvedWinner ? `${resolvedWinner} won` : "Winner already recorded"
+      }. Steps: ${autoTestGameStepRef.current}. Comeback: ${gameResult.winnerGreatestDeficitPips} pips.`
+    );
+
+    if (autoTestCompletedGamesRef.current >= autoTestTargetGamesRef.current) {
+      setAutoTestRunning(false);
+      setMessage(
+        `Auto Test complete: ${autoTestCompletedGamesRef.current} game(s), White ${autoTestWhiteWinsRef.current}, Black ${autoTestBlackWinsRef.current}, errors 0. Report saved.`
+      );
+      appendAutoTestLog("Auto Test batch complete. Report saved in this browser.");
+      return;
+    }
+
+    resetAutoTestCurrentGameTrackers();
+    resetNewGame();
+    appendAutoTestLog(`Starting game ${autoTestCompletedGamesRef.current + 1}/${autoTestTargetGamesRef.current}.`);
+  }
+
   function runAutoTestStep(): void {
     if (diceRolling || autoTestError) return;
 
     const boardProblem = validateAutoTestBoard();
     if (boardProblem) {
-      setAutoTestError(boardProblem);
-      setAutoTestRunning(false);
-      appendAutoTestLog(`AUTO TEST STOPPED: ${boardProblem}`);
-      setMessage(`AUTO TEST STOPPED: ${boardProblem}`);
+      stopAutoTestWithError(boardProblem);
       return;
     }
 
+    updateAutoTestPipDeficits();
     autoTestStepRef.current += 1;
-    if (autoTestStepRef.current > 1200) {
-      const stopReason = "Auto test reached 1200 steps without a winner. Possible loop or very long game.";
-      setAutoTestError(stopReason);
-      setAutoTestRunning(false);
-      appendAutoTestLog(`AUTO TEST STOPPED: ${stopReason}`);
-      setMessage(stopReason);
+    autoTestGameStepRef.current += 1;
+    autoTestTotalStepsRef.current += 1;
+    setAutoTestSummary((current) => ({
+      ...current,
+      totalSteps: autoTestTotalStepsRef.current,
+      noMovePasses: autoTestNoMovePassesRef.current,
+      longestGameSteps: Math.max(current.longestGameSteps, autoTestGameStepRef.current),
+    }));
+
+    if (autoTestGameStepRef.current > 1200) {
+      stopAutoTestWithError("Auto test reached 1200 steps in one game without a winner. Possible loop or very long game.");
       return;
     }
 
     if (winner || gamePhase === "GAME_OVER") {
-      setAutoTestRunning(false);
-      appendAutoTestLog(`Game over detected. ${winner ? `${winner} won.` : "Winner already recorded."}`);
+      completeAutoTestGame(winner);
       return;
     }
 
     if (gamePhase === "OPENING_ROLL") {
-      appendAutoTestLog("Rolling opening dice.");
+      appendAutoTestLog(`Game ${autoTestCompletedGamesRef.current + 1}: rolling opening dice.`);
       void rollOpening();
       return;
     }
 
     if (canChooseDoctrine) {
       const chosenMode: Mode = autoTestStepRef.current % 2 === 0 ? "WAR" : "PEACE";
+      autoTestCurrentStartModeRef.current = chosenMode;
+      autoTestCurrentOpeningWinnerRef.current = openingWinner;
       appendAutoTestLog(`${openingWinner ?? "Opening winner"} chooses ${chosenMode}.`);
       chooseMode(chosenMode);
       return;
@@ -1766,7 +2107,10 @@ export default function App() {
     }
 
     if (remainingDice.length > 0 && legalMoves.length === 0) {
-      appendAutoTestLog(`${currentPlayer} has no legal moves with dice ${remainingDice.join(", ")}. Waiting for auto-pass.`);
+      autoTestNoMovePassesRef.current += 1;
+      autoTestGameNoMovePassesRef.current += 1;
+      setAutoTestSummary((current) => ({ ...current, noMovePasses: autoTestNoMovePassesRef.current }));
+      appendAutoTestLog(`${currentPlayer} has no legal moves with dice ${remainingDice.join(", ")}. Auto-pass will advance.`);
       return;
     }
 
@@ -1780,27 +2124,31 @@ export default function App() {
     executeMove(move);
   }
 
-  function startAutoTest(): void {
+  function startAutoTest(targetGames = 1): void {
     setAutoTestError(null);
-    autoTestStepRef.current = 0;
+    setAutoTestLog([]);
+    resetAutoTestCounters(targetGames);
     setAutoTestRunning(true);
     setShowMoveLog(true);
-    if (gamePhase === "GAME_OVER") {
+    if (gamePhase !== "OPENING_ROLL" || moveLog.length > 0 || winner || finalResult) {
       resetNewGame();
     }
-    appendAutoTestLog("Auto Test started.");
+    appendAutoTestLog(`Auto Test started: ${targetGames} game(s), speed ${AUTO_TEST_SPEED_LABELS[autoTestSpeed]}. Report will be saved after every completed game.`);
   }
 
   function pauseAutoTest(): void {
     setAutoTestRunning(false);
-    appendAutoTestLog("Auto Test paused.");
+    setAutoTestStopReason(`Paused after ${autoTestCompletedGamesRef.current} completed game(s).`);
+    appendAutoTestLog("Auto Test paused. Current report saved.");
   }
 
   function stopAutoTest(): void {
     setAutoTestRunning(false);
     setAutoTestError(null);
     autoTestStepRef.current = 0;
-    appendAutoTestLog("Auto Test stopped.");
+    resetAutoTestCurrentGameTrackers();
+    setAutoTestStopReason(`Stopped by user after ${autoTestCompletedGamesRef.current} completed game(s).`);
+    appendAutoTestLog("Auto Test stopped. Current report saved.");
   }
 
   function stepAutoTestOnce(): void {
@@ -1946,7 +2294,7 @@ export default function App() {
     autoPassTimerRef.current = setTimeout(() => {
       autoPassTimerRef.current = null;
       void nextTurn();
-    }, 2000);
+    }, autoTestRunning ? AUTO_TEST_NO_MOVE_DELAY_MS[autoTestSpeed] : 2000);
 
     return () => {
       if (autoPassTimerRef.current !== null) {
@@ -1954,12 +2302,15 @@ export default function App() {
         autoPassTimerRef.current = null;
       }
     };
-  }, [awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner]);
+  }, [awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner, autoTestRunning, autoTestSpeed]);
 
   useEffect(() => {
     if (!autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
 
-    const delay = remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0 ? 2300 : 850;
+    const delay =
+      remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0
+        ? AUTO_TEST_NO_MOVE_DELAY_MS[autoTestSpeed]
+        : AUTO_TEST_DELAY_MS[autoTestSpeed];
     const timer = window.setTimeout(() => {
       runAutoTestStep();
     }, delay);
@@ -3257,6 +3608,25 @@ export default function App() {
           Records
         </button>
 
+        <select
+          value={autoTestSpeed}
+          onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}
+          disabled={autoTestRunning}
+          title="Auto Test speed"
+          style={{
+            ...luxuryButton,
+            minWidth: 116,
+            padding: "8px 10px",
+            opacity: autoTestRunning ? 0.58 : 1,
+            cursor: autoTestRunning ? "not-allowed" : "pointer",
+          }}
+        >
+          <option value="SLOW">Slow</option>
+          <option value="FAST">Fast</option>
+          <option value="VERY_FAST">Very Fast</option>
+          <option value="TURBO">Turbo</option>
+        </select>
+
         <button
           style={{
             ...luxuryButton,
@@ -3267,10 +3637,40 @@ export default function App() {
             color: autoTestRunning ? "#180700" : luxuryButton.color,
           }}
           type="button"
-          onClick={autoTestRunning ? pauseAutoTest : startAutoTest}
-          title="Let the computer play both sides slowly for bug testing."
+          onClick={autoTestRunning ? pauseAutoTest : () => startAutoTest(1)}
+          title="Let the computer play both sides for one game."
         >
-          {autoTestRunning ? "Pause Auto Test" : "Start Auto Test"}
+          {autoTestRunning ? "Pause Auto Test" : "Run 1 Game"}
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 104,
+            opacity: autoTestRunning ? 0.45 : 1,
+            cursor: autoTestRunning ? "not-allowed" : "pointer",
+          }}
+          type="button"
+          onClick={() => startAutoTest(10)}
+          disabled={autoTestRunning}
+          title="Run 10 automated games for bug testing."
+        >
+          Run 10
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 104,
+            opacity: autoTestRunning ? 0.45 : 1,
+            cursor: autoTestRunning ? "not-allowed" : "pointer",
+          }}
+          type="button"
+          onClick={() => startAutoTest(100)}
+          disabled={autoTestRunning}
+          title="Run 100 automated games for bug testing."
+        >
+          Run 100
         </button>
 
         <button
@@ -3292,9 +3692,33 @@ export default function App() {
           style={{ ...luxuryButton, minWidth: 82 }}
           type="button"
           onClick={stopAutoTest}
-          title="Stop Auto Test and clear any auto-test error."
+          title="Stop Auto Test and save the current auto-test report."
         >
           Stop Test
+        </button>
+
+        <button
+          style={{ ...luxuryButton, minWidth: 122 }}
+          type="button"
+          onClick={() => void copyAutoTestReport()}
+          title="Copy the saved Auto Test report so you can paste it into an email, text, or ChatGPT."
+        >
+          Copy Report
+        </button>
+
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 118,
+            opacity: autoTestRunning ? 0.45 : 1,
+            cursor: autoTestRunning ? "not-allowed" : "pointer",
+          }}
+          type="button"
+          onClick={clearAutoTestReport}
+          disabled={autoTestRunning}
+          title="Clear the saved Auto Test report."
+        >
+          Clear Report
         </button>
       </div>
 
@@ -3389,7 +3813,7 @@ export default function App() {
         )}
       </div>
 
-      {(autoTestLog.length > 0 || autoTestError || autoTestRunning) && (
+      {(autoTestLog.length > 0 || autoTestError || autoTestRunning || autoTestSummary.completedGames > 0) && (
         <div
           style={{
             margin: "10px auto 0",
@@ -3417,7 +3841,9 @@ export default function App() {
             }}
           >
             <span>Computer vs Computer Auto Test: {autoTestStatus}</span>
-            <span>Steps: {autoTestStepRef.current}</span>
+            <span>
+              Speed: {AUTO_TEST_SPEED_LABELS[autoTestSpeed]} • Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames} • Steps: {autoTestSummary.totalSteps}
+            </span>
           </div>
           {autoTestError && (
             <div
@@ -3434,6 +3860,43 @@ export default function App() {
               AUTO TEST STOPPED — {autoTestError}
             </div>
           )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))",
+              gap: 6,
+              marginBottom: 8,
+              color: "#fff1c9",
+              fontSize: "clamp(12px, 1.1vw, 14px)",
+              fontWeight: 800,
+            }}
+          >
+            <div>White wins: {autoTestSummary.whiteWins} ({formatPercent(autoTestSummary.whiteWins, autoTestSummary.completedGames)})</div>
+            <div>Black wins: {autoTestSummary.blackWins} ({formatPercent(autoTestSummary.blackWins, autoTestSummary.completedGames)})</div>
+            <div>Opening winner wins: {autoTestSummary.openingWinnerWins} ({formatPercent(autoTestSummary.openingWinnerWins, autoTestSummary.openingWinnerWins + autoTestSummary.openingWinnerLosses)})</div>
+            <div>WAR chooser wins: {autoTestSummary.warStartWins}/{autoTestSummary.warStartGames}</div>
+            <div>PEACE chooser wins: {autoTestSummary.peaceStartWins}/{autoTestSummary.peaceStartGames}</div>
+            <div>Average game: {autoTestSummary.averageGameSteps} steps</div>
+            <div>Shortest game: {autoTestSummary.shortestGameSteps} steps</div>
+            <div>Longest game: {autoTestSummary.longestGameSteps} steps</div>
+            <div>No-move passes: {autoTestSummary.noMovePasses}</div>
+            <div>Greatest comeback: {autoTestSummary.greatestComebackPips} pips</div>
+          </div>
+          <div
+            style={{
+              color: "#ffe7b7",
+              fontSize: "clamp(12px, 1.1vw, 14px)",
+              fontWeight: 850,
+              marginBottom: 8,
+              background: "rgba(255,230,173,0.08)",
+              border: "1px solid rgba(255,226,138,0.22)",
+              borderRadius: 12,
+              padding: "6px 9px",
+            }}
+          >
+            Saved report: {autoTestSummary.stopReason} • {autoTestSummary.greatestComebackSummary}
+          </div>
+
           <div
             style={{
               maxHeight: 135,
