@@ -1,0 +1,281 @@
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -3420,7 +3420,7 @@
+         style={{
+           position: "relative",
+           width: "100%",
+-          height: "clamp(190px, 26vh, 300px)",
++          height: "clamp(220px, 30vh, 340px)",
+           cursor: isDraggingOrigin ? "grabbing" : isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
+           touchAction: "none",
+           userSelect: "none",
+@@ -3694,8 +3694,8 @@
+       <div
+         onClick={() => handleBearOffTrayClick(player)}
+         style={{
+-          width: "clamp(62px, 5vw, 74px)",
+-          minWidth: 62,
++          width: "clamp(58px, 4.6vw, 68px)",
++          minWidth: 58,
+           borderRadius: 18,
+           background: "linear-gradient(145deg, #5b3219, #1a0904)",
+           border: "3px solid #7c461f",
+@@ -3776,7 +3776,7 @@
+   const modeIsWar = mode === "WAR";
+   const enemyControl = controlState === "ENEMY_CONTROL";
+   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
+-  const shellWidth = "min(92vw, 1060px)";
++  const shellWidth = "min(98vw, 1220px)";
+ 
+   const doctrineBannerText = enemyControl
+     ? "ENEMY CONTROL"
+@@ -3920,7 +3920,7 @@
+         background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
+         minHeight: "100vh",
+         color: "white",
+-        padding: "clamp(8px, 1.2vw, 16px)",
++        padding: "clamp(4px, 0.7vw, 10px)",
+         fontFamily: "Georgia, 'Times New Roman', serif",
+         overflowX: "hidden",
+         maxWidth: "100vw",
+@@ -4246,8 +4246,8 @@
+       <h1
+         style={{
+           width: shellWidth,
+-          margin: "0 auto clamp(6px, 0.8vw, 10px)",
+-          fontSize: "clamp(25px, 2.55vw, 38px)",
++          margin: "0 auto clamp(3px, 0.45vw, 6px)",
++          fontSize: "clamp(20px, 2vw, 30px)",
+           letterSpacing: 0.4,
+           textShadow: "0 3px 8px rgba(0,0,0,0.7)",
+           color: "#f0cf8a",
+@@ -4257,7 +4257,7 @@
+       </h1>
+ 
+       {setupComplete && (
+-        <div style={{ width: shellWidth, margin: "0 auto 8px", display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
++        <div style={{ width: shellWidth, margin: "0 auto 4px", display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+           <div style={{ color: "#ffe6ad", fontSize: "clamp(12px, 1.1vw, 15px)", fontWeight: 900, padding: "8px 12px", border: "1px solid rgba(255,213,128,0.45)", borderRadius: 999, background: "rgba(0,0,0,0.28)" }}>
+             {playSetupMode === "TWO_PLAYERS" ? "Two Players" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Human vs Computer 2 - Aggressive" : "Human vs Computer 1 - Balanced"}
+           </div>
+@@ -4270,10 +4270,10 @@
+       <div
+         style={{
+           width: shellWidth,
+-          margin: "0 auto clamp(7px, 0.8vw, 10px)",
++          margin: "0 auto clamp(4px, 0.5vw, 7px)",
+           display: "grid",
+           gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+-          gap: 8,
++          gap: 6,
+           alignItems: "stretch",
+         }}
+       >
+@@ -4286,8 +4286,8 @@
+             style={{
+               background: "linear-gradient(145deg, rgba(255,238,190,0.16), rgba(20,8,2,0.86))",
+               border: "2px solid rgba(226,171,87,0.55)",
+-              borderRadius: 16,
+-              padding: "8px 10px",
++              borderRadius: 13,
++              padding: "5px 8px",
+               boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.34)",
+             }}
+           >
+@@ -4298,7 +4298,7 @@
+                 fontSize: "clamp(11px, 1vw, 13px)",
+                 fontWeight: 900,
+                 letterSpacing: 0.7,
+-                marginBottom: 5,
++                marginBottom: 3,
+               }}
+             >
+               {color} Player
+@@ -4315,17 +4315,17 @@
+                 border: "2px solid rgba(255,226,138,0.68)",
+                 background: canEditPlayers && !(isComputerGame && color === "Black") ? "#fff8df" : "rgba(255,248,223,0.72)",
+                 color: "#1b0b03",
+-                padding: "7px 9px",
+-                fontSize: "clamp(14px, 1.35vw, 18px)",
++                padding: "5px 8px",
++                fontSize: "clamp(12px, 1.1vw, 16px)",
+                 fontWeight: 900,
+                 fontFamily: "Georgia, 'Times New Roman', serif",
+               }}
+             />
+             <div
+               style={{
+-                marginTop: 5,
++                marginTop: 3,
+                 color: "#f3d18b",
+-                fontSize: "clamp(11px, 1vw, 13px)",
++                fontSize: "clamp(10px, 0.85vw, 12px)",
+                 fontWeight: 800,
+               }}
+             >
+@@ -4362,7 +4362,7 @@
+           width: shellWidth,
+           margin: "0 auto clamp(7px, 0.8vw, 10px)",
+           display: "grid",
+-          gridTemplateColumns: "1.05fr 0.62fr 1fr 0.9fr 0.72fr 0.5fr",
++          gridTemplateColumns: "1.08fr 0.66fr 1fr 0.74fr 0.86fr",
+           gap: 6,
+           alignItems: "stretch",
+         }}
+@@ -4426,24 +4426,41 @@
+             background: enemyControl ? "linear-gradient(145deg, #3b1f00, #ff9a00)" : "linear-gradient(145deg, #17120d, #030201)",
+             border: enemyControl ? "3px solid #ffd000" : "2px solid #6f4a22",
+             borderRadius: 16,
+-            padding: 5,
++            padding: "5px 7px",
+             textAlign: "center",
+             color: enemyControl ? "#fff7c0" : "white",
+-            minHeight: 46,
++            minHeight: 58,
++            display: "flex",
++            flexDirection: "column",
++            justifyContent: "center",
++            gap: 3,
+           }}
+         >
+-          <div style={{ fontSize: 9 }}>TURN</div>
+-          <div style={{ fontSize: "clamp(17px, 1.75vw, 22px)", fontWeight: "bold" }}>{currentPlayer}</div>
+-          <div style={{ fontSize: 9 }}>CONTROLLER</div>
+-          <div style={{ fontSize: "clamp(16px, 1.65vw, 20px)", fontWeight: "bold" }}>{controller}</div>
++          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>TURN</div>
++          <div style={{ fontSize: "clamp(18px, 1.9vw, 25px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer}</div>
++          <div
++            style={{
++              marginTop: 2,
++              alignSelf: "center",
++              borderRadius: 999,
++              border: enemyControl || controller !== currentPlayer ? "2px solid #ffe66d" : "1px solid rgba(255,226,138,0.38)",
++              background: enemyControl || controller !== currentPlayer ? "linear-gradient(145deg,#fff0a8,#d17c00 68%,#4a1600)" : "rgba(255,226,138,0.12)",
++              color: enemyControl || controller !== currentPlayer ? "#210700" : "#f6d58b",
++              padding: "3px 8px",
++              fontSize: "clamp(8px, 0.78vw, 11px)",
++              fontWeight: 900,
++              letterSpacing: 0.4,
++              lineHeight: 1.05,
++              boxShadow: enemyControl || controller !== currentPlayer ? "0 0 14px rgba(255,211,60,0.72)" : "none",
++            }}
++          >
++            {enemyControl || controller !== currentPlayer ? "OPPONENT MAKES ALL MOVES" : "NORMAL CONTROL"}
++          </div>
+         </div>
+ 
+         <div
+           style={{
+-            display: "flex",
+-            alignItems: "center",
+-            justifyContent: "flex-end",
+-            minHeight: 58,
++            display: "none",
+           }}
+         >
+           <button
+@@ -4475,7 +4492,7 @@
+       <div
+         style={{
+           width: shellWidth,
+-          margin: "0 auto clamp(7px, 0.8vw, 10px)",
++          margin: "0 auto clamp(4px, 0.5vw, 7px)",
+           display: "flex",
+           gap: 6,
+           flexWrap: "wrap",
+@@ -4522,10 +4539,52 @@
+           </>
+         )}
+ 
+-        <button style={luxuryButton} onClick={undoMove}>Undo</button>
+         <button
+           style={{
+             ...luxuryButton,
++            minWidth: 76,
++            padding: "9px 14px",
++          }}
++          onClick={undoMove}
++        >
++          Undo
++        </button>
++
++        <button
++          style={{
++            ...luxuryButton,
++            minWidth: 76,
++            padding: "9px 14px",
++            background: confirmResign
++              ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
++              : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
++            color: confirmResign ? "#fff3d0" : "#f3d18b",
++            border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
++            opacity: canResign ? 1 : 0.45,
++            cursor: canResign ? "pointer" : "not-allowed",
++          }}
++          disabled={!canResign}
++          onClick={resignGame}
++          title={confirmResign ? "Confirm resignation" : "Resign game"}
++        >
++          {confirmResign ? "Confirm" : "Resign"}
++        </button>
++
++        <button
++          style={{
++            ...luxuryButton,
++            minWidth: 142,
++            padding: "11px 24px",
++            fontSize: 13,
++            letterSpacing: 0.8,
++            background: canSubmitTurn
++              ? "linear-gradient(145deg, #fff5c8, #d89024 55%, #653000)"
++              : "linear-gradient(145deg, #201812, #050302)",
++            color: canSubmitTurn ? "#1a0900" : "#f3d18b",
++            border: canSubmitTurn ? "3px solid #ffe08a" : "2px solid #9a6328",
++            boxShadow: canSubmitTurn
++              ? "0 0 18px rgba(255,210,90,0.58), inset 0 1px 0 rgba(255,255,230,0.5)"
++              : "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
+             opacity: canSubmitTurn ? 1 : 0.45,
+             cursor: canSubmitTurn ? "pointer" : "not-allowed",
+             pointerEvents: canSubmitTurn ? "auto" : "none",
+@@ -4536,7 +4595,7 @@
+           onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (canSubmitTurn) submitTurn(); else setMessage(gamePhase === "OPENING_ROLL" ? "Roll opening dice first." : "End Turn is not available yet."); }}
+           title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
+         >
+-          End Turn
++          END TURN
+         </button>
+ 
+         {gamePhase === "GAME_OVER" && (
+@@ -5015,18 +5074,18 @@
+       <div
+         style={{
+           width: shellWidth,
+-          margin: "0 auto clamp(10px, 1vw, 14px)",
++          margin: "0 auto clamp(6px, 0.7vw, 10px)",
+           background: "linear-gradient(145deg, #5a3218, #2a1207 58%, #120603)",
+-          padding: 8,
+-          borderRadius: 24,
+-          border: "7px solid #2a1408",
++          padding: 6,
++          borderRadius: 22,
++          border: "5px solid #2a1408",
+           boxShadow: "inset 0 0 0 2px rgba(231,160,72,0.24), inset 0 0 38px rgba(0,0,0,0.65), 0 24px 52px rgba(0,0,0,0.72)",
+         }}
+       >
+         <div
+           style={{
+             display: "grid",
+-            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 74px",
++            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 68px",
+             gap: 6,
+           }}
+         >
+@@ -5072,7 +5131,7 @@
+         <div
+           style={{
+             display: "grid",
+-            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 74px",
++            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 68px",
+             gap: 6,
+           }}
+         >
