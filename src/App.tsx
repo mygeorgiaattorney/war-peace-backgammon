@@ -287,7 +287,7 @@ const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
 const AUTO_TEST_STRATEGY_LABELS: Record<AutoTestStrategy, string> = {
   RANDOM_LEGAL: "Random Legal",
   BALANCED: "Balanced",
-  CONTROLLED_COMEBACK: "Controlled Comeback",
+  CONTROLLED_COMEBACK: "Aggressive",
 };
 
 const AUTO_TEST_BATCH_CHECKPOINT_GAMES = 10;
@@ -883,7 +883,7 @@ function filterByWarPeace(
   if (sequences.length === 0) return sequences;
 
   if (controlState === "ENEMY_CONTROL") {
-    explanation.push("ENEMY CONTROL: opponent controls all moves for this turn; WAR/PEACE restrictions are suspended.");
+    explanation.push("ENEMY CONTROL: WAR/PEACE restrictions are suspended.");
     return sequences;
   }
 
@@ -905,7 +905,7 @@ function filterByWarPeace(
 
   explanation.push(
     minHits === 0
-      ? "PEACE requires a peaceful no-hit sequence where available."
+      ? "PEACE requires a no-hit sequence where available."
       : `PEACE requires the fewest unavoidable hits: ${minHits}.`
   );
 
@@ -1024,28 +1024,6 @@ function playErrorSound(): void {
   second.stop(ctx.currentTime + 0.22);
 }
 
-function playEnemyControlSound(): void {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const ctx = new AudioContextClass();
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.62);
-  gain.connect(ctx.destination);
-
-  [520, 330, 185].forEach((frequency, index) => {
-    const oscillator = ctx.createOscillator();
-    const start = ctx.currentTime + index * 0.16;
-    oscillator.type = index === 0 ? "triangle" : "sawtooth";
-    oscillator.frequency.setValueAtTime(frequency, start);
-    oscillator.frequency.exponentialRampToValueAtTime(Math.max(70, frequency * 0.72), start + 0.14);
-    oscillator.connect(gain);
-    oscillator.start(start);
-    oscillator.stop(start + 0.18);
-  });
-}
 
 function playWinFanfare(): void {
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -1284,13 +1262,18 @@ export default function App() {
   const [blackPlayerName, setBlackPlayerName] = useState("Black Player");
   const [recordBook, setRecordBook] = useState<PlayerRecordBook>(() => loadPlayerRecordBook());
   const [showRecords, setShowRecords] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("warPeaceBackgammonSoundEnabledV1") !== "off");
+  const [showTestingPanel, setShowTestingPanel] = useState(false);
+  const [gameRolls, setGameRolls] = useState(0);
+  const [gamePlayableRolls, setGamePlayableRolls] = useState(0);
+  const [gameUnplayableRolls, setGameUnplayableRolls] = useState(0);
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [betaUnlocked, setBetaUnlocked] = useState(() => window.localStorage.getItem(BETA_ACCESS_KEY) === "granted");
   const [betaPasswordInput, setBetaPasswordInput] = useState("");
   const [betaError, setBetaError] = useState<string | null>(null);
   const [autoTestRunning, setAutoTestRunning] = useState(false);
   const [autoTestSpeed, setAutoTestSpeed] = useState<AutoTestSpeed>("FAST");
-  const [autoTestStrategy, setAutoTestStrategy] = useState<AutoTestStrategy>("RANDOM_LEGAL");
+  const [autoTestStrategy, setAutoTestStrategy] = useState<AutoTestStrategy>("BALANCED");
   const [autoTestLog, setAutoTestLog] = useState<string[]>([]);
   const [autoTestError, setAutoTestError] = useState<string | null>(null);
   const [autoTestReport, setAutoTestReport] = useState<AutoTestReport>(() => loadAutoTestReport());
@@ -1343,6 +1326,10 @@ export default function App() {
   useEffect(() => {
     setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("warPeaceBackgammonSoundEnabledV1", soundEnabled ? "on" : "off");
+  }, [soundEnabled]);
 
   useEffect(() => {
     console.table(runEngineSelfTests().map((result) => ({ result })));
@@ -1462,13 +1449,31 @@ export default function App() {
     setTimeout(() => setTurnBanner(null), duration);
   }
 
+  function soundClick(): void {
+    if (soundEnabled) playClickSound();
+  }
+
+  function soundError(): void {
+    if (soundEnabled) playErrorSound();
+  }
+
+  function soundWin(): void {
+    if (soundEnabled) playWinFanfare();
+  }
+
+  function recordGameRoll(hasLegalMoves: boolean): void {
+    setGameRolls((value) => value + 1);
+    if (hasLegalMoves) setGamePlayableRolls((value) => value + 1);
+    else setGameUnplayableRolls((value) => value + 1);
+  }
+
   function flashWarning(text = "Not permitted — must make a legal move.", duration = 1800): void {
     setWarningMessage(text);
     setTimeout(() => setWarningMessage(null), duration);
   }
 
   function showLegalMoveHelp(sourcePoint: number | null = selectedPoint): void {
-    playErrorSound();
+    soundError();
     flashWarning();
     setAssistSourcePoint(sourcePoint);
     setLegalHelpActive(true);
@@ -1609,12 +1614,12 @@ export default function App() {
       setBetaUnlocked(true);
       setBetaError(null);
       setBetaPasswordInput("");
-      playClickSound();
+      soundClick();
       return;
     }
 
     setBetaError("Incorrect beta password. Please try again.");
-    playErrorSound();
+    soundError();
   }
 
   function clearBetaAccess(): void {
@@ -1732,7 +1737,7 @@ export default function App() {
     setFinalResult(result);
     if (!autoTestRunning) recordCompletedGame(result);
     setMessage(formatFinalResult(result));
-    playWinFanfare();
+    soundWin();
     flashBanner(`${player.toUpperCase()} WINS`, 3000);
     setRemainingDice([]);
     setSelectedPoint(null);
@@ -1770,6 +1775,9 @@ export default function App() {
 
   function resetNewGame(): void {
     setBoard(createStartingBoard());
+    setGameRolls(0);
+    setGamePlayableRolls(0);
+    setGameUnplayableRolls(0);
     setBar({ White: 0, Black: 0 });
     setOff({ White: 0, Black: 0 });
     setMode("WAR");
@@ -1803,6 +1811,9 @@ export default function App() {
     setWarningMessage(null);
     setLegalHelpActive(false);
     setAssistSourcePoint(null);
+    setGameRolls(0);
+    setGamePlayableRolls(0);
+    setGameUnplayableRolls(0);
     setAutoTestError(null);
   }
 
@@ -1856,7 +1867,7 @@ export default function App() {
     setWinner(null);
     setFinalResult(null);
     setConfirmResign(false);
-    playWinFanfare();
+    soundWin();
     flashBanner(`${winner.toUpperCase()} WINS OPENING ROLL`, 3500);
     setMessage(`Opening roll - White: ${whiteDie}, Black: ${blackDie}. ${winner} chooses WAR or PEACE.`);
   }
@@ -1923,7 +1934,7 @@ export default function App() {
     setWinner(null);
     setFinalResult(null);
     setConfirmResign(false);
-    setMessage("PEACE TEST: peaceful moves are required when available.");
+    setMessage("PEACE TEST: no-hit sequence should be preferred if available.");
   }
 
   function chooseMode(chosenMode: Mode): void {
@@ -1933,6 +1944,7 @@ export default function App() {
     }
 
     const openingTurnAnalysis = analyzeLegality(board, openingWinner, openingDice, chosenMode, bar, off, "NORMAL");
+    recordGameRoll(openingTurnAnalysis.legalMoves.length > 0);
     recordAutoTestRoll(openingWinner, openingDice, openingTurnAnalysis.legalMoves.length > 0, bar);
 
     setMode(chosenMode);
@@ -1991,6 +2003,7 @@ export default function App() {
 
     const nextLegalAnalysis = analyzeLegality(board, nextPlayer, dice, nextMode, bar, off, "NORMAL");
     const noLegalMoves = nextLegalAnalysis.legalMoves.length === 0;
+    recordGameRoll(!noLegalMoves);
     recordAutoTestRoll(nextPlayer, dice, !noLegalMoves, bar);
 
     setCurrentPlayer(nextPlayer);
@@ -2173,15 +2186,10 @@ export default function App() {
     setOpeningTurnRequiresMove(false);
     setController(nextController);
     setControlState(nextControlState);
-    playClickSound();
+    soundClick();
     triggerMoveAnimation(move);
 
-    if (peaceViolationTriggersEnemyControl) {
-      playEnemyControlSound();
-      flashBanner("OH NO!|ENEMY CONTROL", 2200);
-    } else if (move.isHit) {
-      flashBanner(controlState === "ENEMY_CONTROL" ? "ENEMY CONTROL|FORCED MOVE" : mode === "WAR" ? "POW CAPTURED" : "PEACE VIOLATION");
-    }
+    if (move.isHit) flashBanner("HIT");
     if (move.isBearOff) flashBanner("BEAR OFF");
 
     const completedWinner = checkForWinner(result.off);
@@ -2196,7 +2204,7 @@ export default function App() {
     }
 
     if (nextControlState === "ENEMY_CONTROL") {
-      setMessage(`OH NO! PEACE VIOLATION: ${nextController} controls all moves for this turn. WAR/PEACE restrictions are suspended.`);
+      setMessage(`ENEMY CONTROL: ${nextController} controls the rest of this turn. WAR/PEACE restrictions are suspended.`);
       return;
     }
 
@@ -2204,13 +2212,9 @@ export default function App() {
       move.isBearOff
         ? "Checker borne off."
         : move.isHit
-        ? controlState === "ENEMY_CONTROL"
-          ? "Enemy Control move completed."
-          : mode === "WAR"
-          ? "POW captured."
-          : "Peace Violation."
+        ? "Hit staged."
         : move.isBarEntry
-        ? "Captured checker re-entered."
+        ? "Bar entry staged."
         : "Move staged."
     );
   }
@@ -2830,7 +2834,7 @@ export default function App() {
       setSelectedPoint(sourcePoint);
       setPreviewMoveKey(null);
       showLegalMoveHelp(sourcePoint);
-      setMessage("Illegal move — make a legal move.");
+      setMessage("Not permitted — must make a legal move.");
       return;
     }
 
@@ -2990,7 +2994,7 @@ export default function App() {
       const barMove = legalMoves.find((move) => move.isBarEntry && move.to === index);
       if (!barMove) {
         showLegalMoveHelp(null);
-        setMessage("Re-entry required: captured checker must return first.");
+        setMessage("Bar entry required.");
         return;
       }
       executeMove(barMove);
@@ -3011,7 +3015,7 @@ export default function App() {
       setLegalHelpActive(false);
       setPreviewMoveKey(null);
       setWarningMessage(null);
-      playClickSound();
+      soundClick();
       setMessage(`Selected point ${index + 1}. Now select a highlighted legal destination.`);
       return;
     }
@@ -3024,7 +3028,7 @@ export default function App() {
     if (!move) {
       setPreviewMoveKey(null);
       showLegalMoveHelp(selectedPoint);
-      setMessage("Illegal move — make a legal move.");
+      setMessage("Not permitted — must make a legal move.");
       return;
     }
 
@@ -3427,6 +3431,40 @@ export default function App() {
     );
   }
 
+  function GameFlowPanel() {
+    return (
+      <div
+        style={{
+          background: "linear-gradient(145deg, #21140c, #050302 72%, #000)",
+          color: "#f6d58b",
+          border: "2px solid rgba(180,122,42,0.9)",
+          borderRadius: 16,
+          padding: "6px 10px",
+          minHeight: 46,
+          textAlign: "center",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 5,
+          alignItems: "center",
+          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.22), 0 7px 16px rgba(0,0,0,0.32)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>ROLLS</div>
+          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gameRolls}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>PLAYABLE</div>
+          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gamePlayableRolls}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>PASSES</div>
+          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gameUnplayableRolls}</div>
+        </div>
+      </div>
+    );
+  }
+
 
   function TrayCheckers({ player, count }: { player: Player; count: number }) {
     const checkerStyle = (index: number): React.CSSProperties => ({
@@ -3508,7 +3546,7 @@ export default function App() {
 
     return (
       <div
-        aria-label={`${section === "top" ? "White" : "Black"} POW camp`}
+        aria-label={`${section === "top" ? "White" : "Black"} hit-checker bar`}
         style={{
           width: "clamp(38px, 3vw, 48px)",
           minWidth: 38,
@@ -3517,7 +3555,6 @@ export default function App() {
           borderRight: "2px solid rgba(0,0,0,0.65)",
           boxShadow: "inset 0 0 20px rgba(0,0,0,0.78), 0 0 8px rgba(0,0,0,0.35)",
           display: "flex",
-          position: "relative",
           alignItems: section === "top" ? "flex-end" : "flex-start",
           justifyContent: "center",
           overflow: "hidden",
@@ -3526,24 +3563,6 @@ export default function App() {
           paddingBottom: section === "top" ? 8 : 0,
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: section === "top" ? 5 : undefined,
-            bottom: section === "bottom" ? 5 : undefined,
-            left: "50%",
-            transform: "translateX(-50%)",
-            color: "rgba(255,232,165,0.78)",
-            fontSize: "clamp(8px, 0.75vw, 10px)",
-            fontWeight: 900,
-            letterSpacing: 1.2,
-            textShadow: "0 2px 6px rgba(0,0,0,0.85)",
-            pointerEvents: "none",
-            zIndex: 3,
-          }}
-        >
-          POW
-        </div>
         <TrayCheckers player={player} count={count} />
       </div>
     );
@@ -3576,7 +3595,7 @@ export default function App() {
   const shellWidth = "min(92vw, 1060px)";
 
   const doctrineBannerText = enemyControl
-    ? "OH NO! ENEMY CONTROL"
+    ? "ENEMY CONTROL"
     : neutralModeState
     ? "WAR & PEACE"
     : modeIsWar
@@ -3584,7 +3603,7 @@ export default function App() {
     : "PEACE!";
 
   const doctrineBannerBackground = enemyControl
-    ? "linear-gradient(145deg, #3b0000, #ff3b19 48%, #ffb000)"
+    ? "linear-gradient(145deg, #ffd000, #ff5c00)"
     : neutralModeState
     ? "linear-gradient(135deg, #1d1209 0%, #b88a45 42%, #e8c979 50%, #5b3615 62%, #140905 100%)"
     : modeIsWar
@@ -3618,13 +3637,6 @@ export default function App() {
     boxShadow: "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
     cursor: "pointer",
   };
-
-  const turnBannerParts = turnBanner ? turnBanner.split("|") : [];
-  const turnBannerMain = turnBannerParts[0] ?? "";
-  const turnBannerSub = turnBannerParts[1] ?? "";
-  const turnBannerIsEnemyControl = !!turnBanner && turnBanner.includes("ENEMY CONTROL");
-  const turnBannerIsPow = !!turnBanner && turnBanner.includes("POW");
-  const turnBannerIsPeaceViolation = !!turnBanner && turnBanner.includes("PEACE VIOLATION");
 
   if (!betaUnlocked) {
     return (
@@ -3794,14 +3806,6 @@ export default function App() {
           50% { filter: brightness(1.25); }
           100% { filter: brightness(1); }
         }
-        @keyframes enemyControlAlarm {
-          0% { opacity: 0; transform: scale(0.68) rotate(-3deg); }
-          12% { opacity: 1; transform: scale(1.08) rotate(2deg); }
-          24% { transform: scale(1) rotate(-1deg); }
-          36% { transform: scale(1.04) rotate(1deg); }
-          76% { opacity: 1; transform: scale(1) rotate(0deg); }
-          100% { opacity: 0; transform: scale(0.92) rotate(0deg); }
-        }
         @keyframes neutralGlow {
           0% { filter: brightness(1); }
           50% { filter: brightness(1.14); }
@@ -3904,20 +3908,14 @@ export default function App() {
             justifyContent: "center",
             zIndex: 9999,
             pointerEvents: "none",
-            animation: turnBannerIsEnemyControl ? "enemyControlAlarm 2.2s ease forwards" : turnBanner.startsWith("DOUBLES - ") ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards" : turnBanner.includes("WINS") ? "winSpectacle 3s ease forwards" : "cinematicFade 1.3s ease forwards",
+            animation: turnBanner.startsWith("DOUBLES - ") ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards" : turnBanner.includes("WINS") ? "winSpectacle 3s ease forwards" : "cinematicFade 1.3s ease forwards",
           }}
         >
           <div
             style={{
               padding: "24px 38px",
               borderRadius: 22,
-              background: turnBannerIsEnemyControl
-                ? "linear-gradient(145deg,#3b0000,#bc1111 42%,#ff7a00 76%,#ffd25a)"
-                : turnBannerIsPow
-                ? "linear-gradient(145deg,#251207,#6b3216 42%,#c08a38)"
-                : turnBannerIsPeaceViolation
-                ? "linear-gradient(145deg,#4b2a00,#d06b00 54%,#ffd06a)"
-                : turnBanner.includes("WAR")
+              background: turnBanner.includes("WAR")
                 ? "linear-gradient(145deg,#620000,#e51b1b)"
                 : turnBanner.includes("PEACE")
                 ? "linear-gradient(145deg,#003a8c,#2298e6)"
@@ -3925,7 +3923,7 @@ export default function App() {
                 ? "linear-gradient(135deg,#fff7c7 0%,#f4cf5e 22%,#b87816 48%,#fff0a8 66%,#6e3f08 100%)"
                 : "linear-gradient(145deg,#1b1207,#7b5524,#d4a14d)",
               color: "white",
-              fontSize: turnBannerIsEnemyControl ? "clamp(22px,4vw,56px)" : turnBanner.includes("DOUBLES") ? "clamp(17px,2.6vw,32px)" : turnBanner.includes("WINS OPENING ROLL") ? "clamp(20px,3vw,36px)" : "clamp(30px,5vw,68px)",
+              fontSize: turnBanner.includes("DOUBLES") ? "clamp(17px,2.6vw,32px)" : turnBanner.includes("WINS OPENING ROLL") ? "clamp(20px,3vw,36px)" : "clamp(30px,5vw,68px)",
               fontWeight: 900,
               letterSpacing: 2,
               boxShadow: "0 20px 40px rgba(0,0,0,0.65)",
@@ -3952,21 +3950,10 @@ export default function App() {
                 <div style={{ fontSize: "0.38em", letterSpacing: 3, marginBottom: 4 }}>VICTORY</div>
                 <div>{turnBanner}</div>
               </div>
-            ) : turnBannerIsEnemyControl ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05, textAlign: "center", minWidth: "clamp(280px, 42vw, 620px)" }}>
-                <span style={{ fontSize: "1.12em", letterSpacing: 3 }}>{turnBannerMain}</span>
-                <span style={{ fontSize: "0.66em", letterSpacing: 2, marginTop: 6 }}>{turnBannerSub}</span>
-                <span style={{ fontSize: "0.28em", letterSpacing: 1, marginTop: 12, color: "#fff0b8" }}>Opponent controls this turn</span>
-              </div>
             ) : turnBanner.startsWith("DOUBLES - ") ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
                 <span style={{ fontSize: "0.5em", letterSpacing: 1 }}>DOUBLES</span>
                 <span>{turnBanner.replace("DOUBLES - ", "")}</span>
-              </div>
-            ) : turnBannerParts.length > 1 ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.06, textAlign: "center" }}>
-                <span>{turnBannerMain}</span>
-                <span style={{ fontSize: "0.42em", letterSpacing: 1.5, marginTop: 5 }}>{turnBannerSub}</span>
               </div>
             ) : (
               turnBanner
@@ -4083,7 +4070,7 @@ export default function App() {
           width: shellWidth,
           margin: "0 auto clamp(7px, 0.8vw, 10px)",
           display: "grid",
-          gridTemplateColumns: "1.18fr 0.7fr 1.05fr 0.72fr 0.5fr",
+          gridTemplateColumns: "1.05fr 0.62fr 1fr 0.9fr 0.72fr 0.5fr",
           gap: 6,
           alignItems: "stretch",
         }}
@@ -4103,7 +4090,7 @@ export default function App() {
               ? "clamp(18px, 2.2vw, 28px)"
               : "clamp(30px, 3.8vw, 54px)",
             fontWeight: "900",
-            color: enemyControl ? "white" : neutralModeState ? "#1b0b00" : "white",
+            color: enemyControl || neutralModeState ? "#1b0b00" : "white",
             textAlign: "center",
             padding: 4,
             boxShadow: doctrineBannerShadow,
@@ -4139,6 +4126,8 @@ export default function App() {
         </div>
 
         <CombinedPipPanel />
+
+        <GameFlowPanel />
 
         <div
           style={{
@@ -4290,6 +4279,24 @@ export default function App() {
           Records
         </button>
 
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 104,
+            background: soundEnabled
+              ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
+              : luxuryButton.background,
+            color: soundEnabled ? "#1a0900" : luxuryButton.color,
+          }}
+          type="button"
+          onClick={() => setSoundEnabled((enabled) => !enabled)}
+          title="Turn game sounds on or off"
+        >
+          Sound {soundEnabled ? "On" : "Off"}
+        </button>
+
+        {false && showTestingPanel && (
+          <>
         <select
           value={autoTestSpeed}
           onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}
@@ -4324,7 +4331,7 @@ export default function App() {
         >
           <option value="RANDOM_LEGAL">Random Legal</option>
           <option value="BALANCED">Balanced</option>
-          <option value="CONTROLLED_COMEBACK">Controlled Comeback</option>
+          <option value="CONTROLLED_COMEBACK">Aggressive</option>
         </select>
 
         <button
@@ -4420,6 +4427,8 @@ export default function App() {
         >
           Clear Report
         </button>
+          </>
+        )}
       </div>
 
       <div
@@ -4513,7 +4522,7 @@ export default function App() {
         )}
       </div>
 
-      {(autoTestLog.length > 0 || autoTestError || autoTestRunning || autoTestSummary.completedGames > 0) && (
+      {false && showTestingPanel && (autoTestLog.length > 0 || autoTestError || autoTestRunning || autoTestSummary.completedGames > 0) && (
         <div
           style={{
             margin: "10px auto 0",
@@ -4797,7 +4806,110 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ display: "none" }}>
+      <div
+        style={{
+          width: shellWidth,
+          margin: "0 auto clamp(12px, 1.2vw, 18px)",
+          textAlign: "center",
+        }}
+      >
+        <button
+          style={{
+            ...luxuryButton,
+            minWidth: 190,
+            opacity: autoTestRunning || showTestingPanel ? 1 : 0.72,
+          }}
+          type="button"
+          onClick={() => setShowTestingPanel((visible) => !visible)}
+          title="Show or hide computer testing tools."
+        >
+          {showTestingPanel ? "Hide Testing Tools" : "Testing Tools"}
+        </button>
+        {!showTestingPanel && (
+          <div style={{ marginTop: 5, color: "rgba(255,231,183,0.68)", fontSize: 12, fontWeight: 800 }}>
+            Public game controls stay clean. Auto Test remains available here for continued development.
+          </div>
+        )}
+
+        {showTestingPanel && (
+          <div
+            style={{
+              marginTop: 10,
+              background: autoTestError
+                ? "linear-gradient(145deg, rgba(90,0,0,0.92), rgba(20,0,0,0.96))"
+                : "linear-gradient(145deg, rgba(35,20,8,0.94), rgba(8,3,1,0.96))",
+              border: autoTestError ? "3px solid #ffb08e" : "2px solid rgba(255,213,128,0.55)",
+              borderRadius: 18,
+              padding: "10px 14px",
+              boxShadow: "0 12px 28px rgba(0,0,0,0.55)",
+              color: "#ffe6ad",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: "clamp(15px, 1.4vw, 19px)", marginBottom: 8 }}>
+              Developer Testing Panel: {autoTestStatus}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
+              <select
+                value={autoTestSpeed}
+                onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}
+                disabled={autoTestRunning}
+                title="Auto Test speed"
+                style={{ ...luxuryButton, minWidth: 116, padding: "8px 10px", opacity: autoTestRunning ? 0.58 : 1 }}
+              >
+                <option value="SLOW">Slow</option>
+                <option value="FAST">Fast</option>
+                <option value="VERY_FAST">Very Fast</option>
+                <option value="SAFE_TURBO">Safe Turbo</option>
+              </select>
+              <select
+                value={autoTestStrategy}
+                onChange={(event) => setAutoTestStrategy(event.target.value as AutoTestStrategy)}
+                disabled={autoTestRunning}
+                title="Auto Test computer strategy"
+                style={{ ...luxuryButton, minWidth: 168, padding: "8px 10px", opacity: autoTestRunning ? 0.58 : 1 }}
+              >
+                <option value="RANDOM_LEGAL">Random Legal</option>
+                <option value="BALANCED">Balanced</option>
+                <option value="CONTROLLED_COMEBACK">Aggressive</option>
+              </select>
+              <button style={{ ...luxuryButton, minWidth: 104 }} type="button" onClick={autoTestRunning ? pauseAutoTest : () => startAutoTest(1)}>
+                {autoTestRunning ? "Pause" : "Run 1 Game"}
+              </button>
+              <button style={{ ...luxuryButton, minWidth: 96, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={() => startAutoTest(10)} disabled={autoTestRunning}>Run 10</button>
+              <button style={{ ...luxuryButton, minWidth: 96, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={() => startAutoTest(100)} disabled={autoTestRunning}>Run 100</button>
+              <button style={{ ...luxuryButton, minWidth: 92, opacity: diceRolling || autoTestRunning ? 0.45 : 1 }} type="button" onClick={stepAutoTestOnce} disabled={diceRolling || autoTestRunning}>Step Test</button>
+              <button style={{ ...luxuryButton, minWidth: 82 }} type="button" onClick={stopAutoTest}>Stop Test</button>
+              <button style={{ ...luxuryButton, minWidth: 116 }} type="button" onClick={() => void copyAutoTestReport()}>Copy Report</button>
+              <button style={{ ...luxuryButton, minWidth: 112, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={clearAutoTestReport} disabled={autoTestRunning}>Clear Report</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 6, color: "#fff1c9", fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, textAlign: "center" }}>
+              <div>Strategy: {AUTO_TEST_STRATEGY_LABELS[autoTestStrategy]}</div>
+              <div>Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames}</div>
+              <div>Average game: {autoTestSummary.averageDiceRolls} rolls</div>
+              <div>Playable rolls: {autoTestSummary.playableRolls}</div>
+              <div>Unplayable passes: {autoTestSummary.unplayableRolls}</div>
+              <div>Final margin avg/median: {autoTestSummary.averageFinalPipMargin}/{autoTestSummary.medianFinalPipMargin}</div>
+              <div>Highest pip count: {autoTestSummary.highestPipCount}</div>
+              <div>Largest pip gap: {autoTestSummary.largestPipGap}</div>
+              <div>Shutouts: {autoTestSummary.shutoutGames}</div>
+              <div>Enemy Control: {autoTestSummary.enemyControlTriggers}</div>
+            </div>
+
+            <div style={{ marginTop: 8, color: "#ffe7b7", fontSize: 13, fontWeight: 850, background: "rgba(255,230,173,0.08)", border: "1px solid rgba(255,226,138,0.22)", borderRadius: 12, padding: "7px 9px" }}>
+              Saved report: {autoTestSummary.stopReason} • {autoTestSummary.greatestComebackSummary}
+            </div>
+
+            {autoTestError && (
+              <div style={{ marginTop: 8, color: "#fff4d6", background: "rgba(255,0,0,0.18)", borderRadius: 12, padding: "7px 10px", fontWeight: 900 }}>
+                AUTO TEST STOPPED — {autoTestError}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+            <div style={{ display: "none" }}>
         {showMoveLog && moveLog.length > 0 && (
           <div>
             {moveLog.map((entry) => (
