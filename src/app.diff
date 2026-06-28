@@ -1,0 +1,488 @@
+diff -urN src/App.tsx src/App.tsx
+--- src/App.tsx	2026-06-28 18:05:51.184493745 +0000
++++ src/App.tsx	2026-06-28 18:05:51.206524624 +0000
+@@ -880,6 +880,8 @@
+   sequences: Sequence[],
+   mode: Mode,
+   controlState: ControlState,
++  player: Player,
++  off: OffState,
+   explanation: string[]
+ ): Sequence[] {
+   if (sequences.length === 0) return sequences;
+@@ -895,10 +897,18 @@
+ 
+     if (maxHits > 0) explanation.push(`WAR requires maximum hitting: ${maxHits} hit(s).`);
+ 
+-    const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
+-    best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
++    if (off[player] > 0) {
++      const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
++      best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
++
++      if (maxBearOffs > 0) explanation.push(`Bear-off priority applied after commitment: ${maxBearOffs} checker(s) off.`);
++    } else {
++      const possibleBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
++      if (possibleBearOffs > 0) {
++        explanation.push("Bear-off is optional until this player has borne off the first checker; home-board rearrangement remains legal.");
++      }
++    }
+ 
+-    if (maxBearOffs > 0) explanation.push(`Bear-off priority applied: ${maxBearOffs} checker(s) off.`);
+     return best;
+   }
+ 
+@@ -911,10 +921,18 @@
+       : `PEACE requires the fewest unavoidable hits: ${minHits}.`
+   );
+ 
+-  const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
+-  best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
++  if (off[player] > 0) {
++    const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
++    best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
++
++    if (maxBearOffs > 0) explanation.push(`Bear-off priority applied after commitment: ${maxBearOffs} checker(s) off.`);
++  } else {
++    const possibleBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
++    if (possibleBearOffs > 0) {
++      explanation.push("Bear-off is optional until this player has borne off the first checker; home-board rearrangement remains legal.");
++    }
++  }
+ 
+-  if (maxBearOffs > 0) explanation.push(`Bear-off priority applied: ${maxBearOffs} checker(s) off.`);
+   return best;
+ }
+ 
+@@ -970,7 +988,7 @@
+   explanation.push(`Maximum dice-use rule: ${maxMovesUsed} move(s) available.`);
+ 
+   best = enforceLargerDieRule(board, player, dice, bar, off, best, explanation);
+-  best = filterByWarPeace(best, mode, controlState, explanation);
++  best = filterByWarPeace(best, mode, controlState, player, off, explanation);
+   best = filterByMaximumMoves(best);
+ 
+   return { legalSequences: best, legalMoves: dedupeFirstMoves(best), explanation };
+@@ -2476,7 +2494,9 @@
+   }
+ 
+   function isOpponentHomePoint(player: Player, pointIndex: number): boolean {
+-    return player === "White" ? pointIndex >= 18 : pointIndex <= 5;
++    // The opponent home board is the board quadrant where this player enters from the bar.
++    // White enters through Black's home board, and Black enters through White's home board.
++    return player === "White" ? pointIndex >= 0 && pointIndex <= 5 : pointIndex >= 18 && pointIndex <= 23;
+   }
+ 
+   function countSingleBlots(testBoard: Point[], player: Player): number {
+@@ -2538,16 +2558,358 @@
+     return entryBlots * 18 + openEntries * 4 + closedPenalty;
+   }
+ 
++  function countCheckersInOpponentHomeBoard(testBoard: Point[], player: Player): number {
++    return testBoard.reduce((total, point, index) => {
++      if (point.owner !== player || !isOpponentHomePoint(player, index)) return total;
++      return total + point.count;
++    }, 0);
++  }
++
++  function countBlotsInOpponentHomeBoard(testBoard: Point[], player: Player): number {
++    return testBoard.reduce((total, point, index) => {
++      if (point.owner !== player || point.count !== 1 || !isOpponentHomePoint(player, index)) return total;
++      return total + 1;
++    }, 0);
++  }
++
++  function countMadeHomeBoardPoints(testBoard: Point[], player: Player): number {
++    return testBoard.reduce((total, point, index) => {
++      if (!isPlayerHomeBoard(player, index)) return total;
++      return total + (point.owner === player && point.count >= 2 ? 1 : 0);
++    }, 0);
++  }
++
++  function countHomeBoardCheckers(testBoard: Point[], player: Player): number {
++    return testBoard.reduce((total, point, index) => {
++      if (!isPlayerHomeBoard(player, index) || point.owner !== player) return total;
++      return total + point.count;
++    }, 0);
++  }
++
++  function scoreHomeBoardPrime(testBoard: Point[], player: Player): number {
++    const homeIndexes = player === "White" ? [18, 19, 20, 21, 22, 23] : [5, 4, 3, 2, 1, 0];
++    let bestRun = 0;
++    let currentRun = 0;
++
++    for (const index of homeIndexes) {
++      const point = testBoard[index];
++      if (point.owner === player && point.count >= 2) {
++        currentRun += 1;
++        bestRun = Math.max(bestRun, currentRun);
++      } else {
++        currentRun = 0;
++      }
++    }
++
++    return bestRun * bestRun * 22;
++  }
++
++  function countMadePointsInRange(testBoard: Point[], player: Player, startIndex: number, endIndex: number): number {
++    let made = 0;
++    for (let index = startIndex; index <= endIndex; index += 1) {
++      const point = testBoard[index];
++      if (point.owner === player && point.count >= 2) made += 1;
++    }
++    return made;
++  }
++
++  function countMadeBoardPoints(testBoard: Point[], player: Player): number {
++    return countMadePointsInRange(testBoard, player, 0, 23);
++  }
++
++  function countMadeMidBoardPoints(testBoard: Point[], player: Player): number {
++    return countMadePointsInRange(testBoard, player, 6, 17);
++  }
++
++  function scorePrimeRun(testBoard: Point[], player: Player, indexes: number[]): number {
++    let bestRun = 0;
++    let currentRun = 0;
++
++    for (const index of indexes) {
++      const point = testBoard[index];
++      if (point.owner === player && point.count >= 2) {
++        currentRun += 1;
++        bestRun = Math.max(bestRun, currentRun);
++      } else {
++        currentRun = 0;
++      }
++    }
++
++    return bestRun * bestRun * 36;
++  }
++
++  function scoreBoardBlockade(testBoard: Point[], player: Player): number {
++    const pathIndexes = player === "White"
++      ? Array.from({ length: 24 }, (_, index) => index)
++      : Array.from({ length: 24 }, (_, index) => 23 - index);
++    const madeHomePoints = countMadeHomeBoardPoints(testBoard, player);
++    const madeMidPoints = countMadeMidBoardPoints(testBoard, player);
++    const madeAllPoints = countMadeBoardPoints(testBoard, player);
++
++    return (
++      madeAllPoints * 24 +
++      madeMidPoints * 58 +
++      madeHomePoints * 72 +
++      scorePrimeRun(testBoard, player, pathIndexes)
++    );
++  }
++
++  function countOpenOpponentEntriesIntoHome(testBoard: Point[], player: Player): number {
++    return countOpenEntryPoints(testBoard, opponent(player));
++  }
++
++  function getOnePointIndex(player: Player): number {
++    return player === "White" ? 23 : 0;
++  }
++
++  function countCheckersOnOnePoint(testBoard: Point[], player: Player): number {
++    const onePoint = testBoard[getOnePointIndex(player)];
++    return onePoint.owner === player ? onePoint.count : 0;
++  }
++
++  function countDirectShotBlots(testBoard: Point[], player: Player): number {
++    return testBoard.reduce((total, point, index) => {
++      if (point.owner !== player || point.count !== 1) return total;
++      return total + (isPointHittableByOpponent(testBoard, player, index) ? 1 : 0);
++    }, 0);
++  }
++
++  function isLateBearoffRace(testBoard: Point[], testBar: BarState, testOff: OffState, player: Player): boolean {
++    const enemy = opponent(player);
++    const playerAllHome = allHome(testBoard, player, testBar);
++    const enemyAllHome = allHome(testBoard, enemy, testBar);
++    const playerMostlyHomeOrOff = testOff[player] >= 6 || playerAllHome;
++    const enemyMostlyHomeOrOff = testOff[enemy] >= 6 || enemyAllHome;
++
++    return (
++      playerAllHome ||
++      (playerMostlyHomeOrOff && enemyMostlyHomeOrOff) ||
++      (testOff[player] + testOff[enemy] >= 12)
++    );
++  }
++
++
++  function applySequenceForPlayer(
++    startBoard: Point[],
++    startBar: BarState,
++    startOff: OffState,
++    player: Player,
++    sequence: Sequence
++  ): { board: Point[]; bar: BarState; off: OffState } {
++    return sequence.moves.reduce(
++      (state, nextMove) => applyMove(state.board, nextMove, player, state.bar, state.off),
++      { board: cloneBoard(startBoard), bar: { ...startBar }, off: { ...startOff } }
++    );
++  }
++
++  function countMovesFromOnePoint(sequence: Sequence, player: Player): number {
++    const onePointIndex = getOnePointIndex(player);
++    return sequence.moves.filter((candidate) => candidate.from === onePointIndex).length;
++  }
++
++  function countMovesFromStack(sequence: Sequence, fromIndex: number): number {
++    return sequence.moves.filter((candidate) => candidate.from === fromIndex).length;
++  }
++
++  function scoreAutoTestSequence(sequence: Sequence, strategyOverride: AutoTestStrategy = autoTestStrategy): number {
++    if (sequence.moves.length === 0) return Number.NEGATIVE_INFINITY;
++
++    const activeStrategy = strategyOverride;
++    const enemy = opponent(currentPlayer);
++    const beforePips = calculatePipCount(board, currentPlayer, bar);
++    const opponentPips = calculatePipCount(board, enemy, bar);
++    const deficit = Math.max(0, beforePips - opponentPips);
++    const beforeBlots = countSingleBlots(board, currentPlayer);
++    const beforeDirectShotBlots = countDirectShotBlots(board, currentPlayer);
++    const beforeOnePointCheckers = countCheckersOnOnePoint(board, currentPlayer);
++    const beforeOff = off[currentPlayer];
++    const beforeOnePointIndex = getOnePointIndex(currentPlayer);
++    const beforeOpponentHomeCheckers = countCheckersInOpponentHomeBoard(board, currentPlayer);
++    const beforeOpponentHomeBlots = countBlotsInOpponentHomeBoard(board, currentPlayer);
++    const beforeHomeMadePoints = countMadeHomeBoardPoints(board, currentPlayer);
++    const beforeHomeCheckers = countHomeBoardCheckers(board, currentPlayer);
++    const beforeHomePrimeScore = scoreHomeBoardPrime(board, currentPlayer);
++    const beforeMidMadePoints = countMadeMidBoardPoints(board, currentPlayer);
++    const beforeBlockadeScore = scoreBoardBlockade(board, currentPlayer);
++    const beforeOpponentOpenEntries = countOpenOpponentEntriesIntoHome(board, currentPlayer);
++    const sequenceResult = applySequenceForPlayer(board, bar, off, currentPlayer, sequence);
++    const afterPips = calculatePipCount(sequenceResult.board, currentPlayer, sequenceResult.bar);
++    const afterBlots = countSingleBlots(sequenceResult.board, currentPlayer);
++    const afterDirectShotBlots = countDirectShotBlots(sequenceResult.board, currentPlayer);
++    const afterOnePointCheckers = countCheckersOnOnePoint(sequenceResult.board, currentPlayer);
++    const afterOpponentHomeCheckers = countCheckersInOpponentHomeBoard(sequenceResult.board, currentPlayer);
++    const afterOpponentHomeBlots = countBlotsInOpponentHomeBoard(sequenceResult.board, currentPlayer);
++    const afterHomeMadePoints = countMadeHomeBoardPoints(sequenceResult.board, currentPlayer);
++    const afterHomeCheckers = countHomeBoardCheckers(sequenceResult.board, currentPlayer);
++    const afterHomePrimeScore = scoreHomeBoardPrime(sequenceResult.board, currentPlayer);
++    const afterMidMadePoints = countMadeMidBoardPoints(sequenceResult.board, currentPlayer);
++    const afterBlockadeScore = scoreBoardBlockade(sequenceResult.board, currentPlayer);
++    const afterOpponentOpenEntries = countOpenOpponentEntriesIntoHome(sequenceResult.board, currentPlayer);
++    const borneOff = sequenceResult.off[currentPlayer] - beforeOff;
++    const bearoffCommitted = beforeOff > 0;
++    const pipGain = beforePips - afterPips;
++    const onePointReduction = Math.max(0, beforeOnePointCheckers - afterOnePointCheckers);
++    const onePointMoves = countMovesFromOnePoint(sequence, currentPlayer);
++    const newBlots = Math.max(0, afterBlots - beforeBlots);
++    const newDirectShotBlots = Math.max(0, afterDirectShotBlots - beforeDirectShotBlots);
++    const lateRace = isLateBearoffRace(board, bar, off, currentPlayer);
++    const playerIsBehind = deficit > 0;
++    const currentPipGap = Math.abs(beforePips - opponentPips);
++    const contactGameStillAlive =
++      beforeOpponentHomeCheckers > 0 ||
++      afterOpponentHomeCheckers > 0 ||
++      bar[currentPlayer] > 0;
++    const enteredOpponentHomeFromBar = sequence.moves.some((candidate) =>
++      candidate.isBarEntry && candidate.to >= 0 && isOpponentHomePoint(currentPlayer, candidate.to)
++    );
++    const runawayRisk = currentPipGap >= 80 || beforePips >= 140 || opponentPips >= 140;
++    const controlledComebackContact =
++      activeStrategy === "CONTROLLED_COMEBACK" &&
++      playerIsBehind &&
++      contactGameStillAlive;
++    const pureRaceUrgency = (lateRace || runawayRisk || playerIsBehind) && !controlledComebackContact;
++    const homeMadePointGain = Math.max(0, afterHomeMadePoints - beforeHomeMadePoints);
++    const homeCheckerGain = Math.max(0, afterHomeCheckers - beforeHomeCheckers);
++    const homePrimeGain = Math.max(0, afterHomePrimeScore - beforeHomePrimeScore);
++    const midMadePointGain = Math.max(0, afterMidMadePoints - beforeMidMadePoints);
++    const blockadeGain = Math.max(0, afterBlockadeScore - beforeBlockadeScore);
++    const closedEntryGain = Math.max(0, beforeOpponentOpenEntries - afterOpponentOpenEntries);
++    const abandonedOpponentHome = beforeOpponentHomeCheckers > 0 && afterOpponentHomeCheckers === 0;
++    const preservedLandmine = afterOpponentHomeBlots > 0 && beforeOpponentHomeBlots >= 0;
++    const containmentReady = afterHomeMadePoints >= 3 || afterHomePrimeScore >= 88;
++    const firstMove = sequence.moves[0];
++
++    let score = 0;
++    score += pipGain * 8;
++    score += borneOff * (bearoffCommitted ? 420 : 80);
++    score += sequence.totalBearOffs * (bearoffCommitted ? 160 : 20);
++    score += sequence.totalHits * (mode === "WAR" ? 100 : 35);
++    if (firstMove.isBarEntry) score += 45;
++
++    if (activeStrategy === "RANDOM_LEGAL") {
++      return score + Math.random() * 100;
++    }
++
++    if (pureRaceUrgency) {
++      // Race rule: when trailing in a true race, the computer must prefer winning chances over cosmetics.
++      // This is intentionally sequence-based so it sees the whole roll, not just the first click.
++      score += pipGain * (playerIsBehind ? 14 : 6);
++      score += borneOff * (playerIsBehind ? 650 : 300);
++      score += onePointReduction * (playerIsBehind ? 420 : 180);
++      score += onePointMoves * (playerIsBehind ? 260 : 90);
++      score -= afterOnePointCheckers * (playerIsBehind ? 75 : 32);
++      score -= newDirectShotBlots * (playerIsBehind ? 28 : 120);
++
++      if (beforeOnePointCheckers >= 3 && onePointReduction > 0) score += playerIsBehind ? 300 : 110;
++      if (beforeOnePointCheckers >= 4 && onePointMoves > 0) score += playerIsBehind ? 260 : 90;
++      if (deficit >= 10 && beforeOnePointCheckers >= 3 && onePointReduction === 0) score -= 360;
++      if (deficit >= 20 && beforeOnePointCheckers >= 3 && onePointReduction === 0) score -= 520;
++    } else {
++      score -= newBlots * 22;
++      score -= newDirectShotBlots * 60;
++    }
++
++    // Containment rule: when the computer is behind and still has contact, it should not
++    // simply run every back checker out of the opponent's home board. Keep a blot/anchor
++    // as a landmine while building the computer's own home board to trap a hit checker.
++    if (activeStrategy === "CONTROLLED_COMEBACK" && playerIsBehind && contactGameStillAlive) {
++      score += afterOpponentHomeCheckers * (deficit >= 60 ? 120 : 75);
++      score += afterOpponentHomeBlots * (containmentReady ? 310 : 175);
++      score += homeMadePointGain * 330;
++      score += midMadePointGain * 210;
++      score += blockadeGain * 3;
++      score += closedEntryGain * (sequence.totalHits > 0 || bar[enemy] > 0 ? 260 : 120);
++      score += homeCheckerGain * 24;
++      score += homePrimeGain * 4;
++      score += afterHomeMadePoints * (deficit >= 40 ? 90 : 45);
++      score += afterMidMadePoints * (deficit >= 40 ? 42 : 24);
++      score += (6 - afterOpponentOpenEntries) * (sequence.totalHits > 0 || bar[enemy] > 0 ? 55 : 22);
++
++      if (preservedLandmine) score += containmentReady ? 260 : 120;
++      if (enteredOpponentHomeFromBar && afterOpponentHomeCheckers === 0) score -= deficit >= 30 ? 900 : 450;
++      if (enteredOpponentHomeFromBar && afterOpponentHomeBlots > 0) score += containmentReady ? 360 : 210;
++      if (abandonedOpponentHome) score -= deficit >= 60 ? 950 : 575;
++      if (afterOpponentHomeCheckers === 1 && afterOpponentHomeBlots === 1) score += containmentReady ? 360 : 210;
++      if (afterHomeMadePoints >= 4) score += 210;
++      if (afterHomeMadePoints >= 5) score += 260;
++      if (!bearoffCommitted) {
++        // Before the first checker is borne off, Computer 2 may use the home board
++        // as a weapon instead of rushing checkers off. Reward priming and filling
++        // the home board so a later hit can keep the opponent trapped.
++        score += homeMadePointGain * 300;
++        score += midMadePointGain * 190;
++        score += blockadeGain * 2;
++        score += homePrimeGain * 3;
++        if (homeMadePointGain > 0 && borneOff === 0) score += 190;
++        if (midMadePointGain > 0 && borneOff === 0) score += 110;
++        if (closedEntryGain > 0 && sequence.totalHits > 0) score += 220;
++        if (borneOff > 0 && homeMadePointGain === 0 && afterHomeMadePoints < 4) score -= 230;
++      }
++      if (homeMadePointGain === 0 && midMadePointGain === 0 && homeCheckerGain === 0 && deficit >= 40) score -= 180;
++      if (sequence.totalHits > 0) score += afterHomeMadePoints * 85 + afterMidMadePoints * 30;
++      if (sequence.totalHits > 0 && afterOpponentOpenEntries <= 2) score += 360;
++      if (sequence.totalHits > 0 && afterOpponentOpenEntries <= 1) score += 520;
++      if (afterOpponentHomeCheckers === 0 && afterHomeMadePoints < 4 && deficit >= 25) score -= 320;
++    } else {
++      // Even when not in comeback mode, prefer useful home-board construction over drift.
++      score += homeMadePointGain * (bearoffCommitted ? 110 : 190);
++      score += midMadePointGain * (bearoffCommitted ? 70 : 130);
++      score += blockadeGain * (bearoffCommitted ? 1 : 2);
++      score += closedEntryGain * (sequence.totalHits > 0 ? 150 : 65);
++      score += homeCheckerGain * (bearoffCommitted ? 8 : 12);
++      score += homePrimeGain * (bearoffCommitted ? 1 : 2);
++    }
++
++    if (activeStrategy === "BALANCED") {
++      score -= newBlots * (playerIsBehind ? 10 : 18);
++    }
++
++    if (activeStrategy === "CONTROLLED_COMEBACK") {
++      const hasAnchor = hasOpponentHomeAnchor(board, currentPlayer);
++      const openEntryPoints = countOpenEntryPoints(board, currentPlayer);
++      const returnShotPotential = calculateReturnShotPotential(board, currentPlayer);
++      const onePointStackExists = beforeOnePointCheckers >= 3;
++
++      score += deficit * 2;
++      if (playerIsBehind) score += pipGain * 7;
++      if (playerIsBehind && onePointStackExists) score += onePointReduction * 360;
++      if (playerIsBehind && onePointStackExists && onePointMoves > 0) score += 320;
++      if (playerIsBehind && onePointStackExists && onePointReduction === 0) score -= 650;
++
++      if (homeMadePointGain > 0) score += 180;
++      if (midMadePointGain > 0) score += 95;
++      if (closedEntryGain > 0) score += sequence.totalHits > 0 ? 240 : 90;
++      if (afterHomeMadePoints >= 4 && afterOpponentOpenEntries <= 2) score += 280;
++
++      if (!lateRace && !runawayRisk && hasAnchor && returnShotPotential >= 16) score += 45;
++      if (openEntryPoints <= 2 && newDirectShotBlots > 0) score -= 90;
++      if (!playerIsBehind && newBlots >= 2) score -= 70;
++    }
++
++    // Tiebreaker: prefer moving the largest stack when that stack is the stale 1-point pile.
++    if (beforeOnePointCheckers >= 3) score += countMovesFromStack(sequence, beforeOnePointIndex) * 35;
++
++    return score + Math.random() * 8;
++  }
++
+   function scoreAutoTestMove(move: Move, strategyOverride: AutoTestStrategy = autoTestStrategy): number {
+     const activeStrategy = strategyOverride;
+     const beforePips = calculatePipCount(board, currentPlayer, bar);
+     const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
+     const deficit = Math.max(0, beforePips - opponentPips);
+     const beforeBlots = countSingleBlots(board, currentPlayer);
++    const beforeOnePointCheckers = countCheckersOnOnePoint(board, currentPlayer);
++    const beforeDirectShotBlots = countDirectShotBlots(board, currentPlayer);
+     const applied = applyMove(board, move, currentPlayer, bar, off);
+     const afterPips = calculatePipCount(applied.board, currentPlayer, applied.bar);
+     const afterBlots = countSingleBlots(applied.board, currentPlayer);
++    const afterOnePointCheckers = countCheckersOnOnePoint(applied.board, currentPlayer);
++    const afterDirectShotBlots = countDirectShotBlots(applied.board, currentPlayer);
+     const pipGain = beforePips - afterPips;
++    const onePointReduction = Math.max(0, beforeOnePointCheckers - afterOnePointCheckers);
++    const newDirectShotBlots = Math.max(0, afterDirectShotBlots - beforeDirectShotBlots);
++    const lateBearoffRace = isLateBearoffRace(board, bar, off, currentPlayer);
++    const playerIsBehind = deficit > 0;
+     const landingPoint =
+       move.isBearOff || move.to < 0 || move.to > 23 ? null : applied.board[move.to];
+ 
+@@ -2557,6 +2919,21 @@
+     if (move.isBarEntry) score += 45;
+     if (move.isHit) score += mode === "WAR" ? 95 : 45;
+ 
++    // Late bear-off/race correction:
++    // A trailing computer must not cling to a safe stack on the 1-point.
++    // When behind, speed and clearing the 1-point outrank ordinary blot fear.
++    if (lateBearoffRace && playerIsBehind) {
++      score += pipGain * 8;
++      if (move.isBearOff) score += deficit >= 15 ? 220 : 150;
++      score += onePointReduction * (deficit >= 15 ? 160 : 110);
++      score -= afterOnePointCheckers * (deficit >= 15 ? 28 : 18);
++      score -= newDirectShotBlots * (deficit >= 15 ? 35 : 70);
++
++      if (beforeOnePointCheckers >= 3 && onePointReduction > 0) score += 90;
++      if (beforeOnePointCheckers >= 3 && afterOnePointCheckers === 1) score += 65;
++      if (deficit >= 25 && move.isBearOff) score += 110;
++    }
++
+     if (activeStrategy === "RANDOM_LEGAL") {
+       score += Math.random() * 100;
+       return score;
+@@ -2629,11 +3006,29 @@
+   function chooseAutoTestMove(strategyOverride: AutoTestStrategy = autoTestStrategy): Move | null {
+     if (legalMoves.length === 0) return null;
+ 
++    // Choose by the best complete legal sequence, not merely the best first checker move.
++    // This fixes late-race mistakes where the computer ignored a six that should be used
++    // to clear or reduce the stale 1-point stack because the immediate first-move score
++    // looked too risky.
++    let bestSequence = legalAnalysis.legalSequences[0] ?? null;
++    let bestScore = Number.NEGATIVE_INFINITY;
++
++    for (const sequence of legalAnalysis.legalSequences) {
++      if (sequence.moves.length === 0) continue;
++      const score = scoreAutoTestSequence(sequence, strategyOverride);
++      if (score > bestScore) {
++        bestScore = score;
++        bestSequence = sequence;
++      }
++    }
++
++    if (bestSequence?.moves[0]) return bestSequence.moves[0];
++
+     const barEntryMoves = legalMoves.filter((move) => move.isBarEntry);
+     const candidateMoves = barEntryMoves.length > 0 ? barEntryMoves : legalMoves;
+ 
+     let bestMove = candidateMoves[0];
+-    let bestScore = Number.NEGATIVE_INFINITY;
++    bestScore = Number.NEGATIVE_INFINITY;
+ 
+     for (const move of candidateMoves) {
+       const score = scoreAutoTestMove(move, strategyOverride);
