@@ -6,6 +6,7 @@ type ControlState = "NORMAL" | "ENEMY_CONTROL";
 type GamePhase = "OPENING_ROLL" | "MODE_CHOICE" | "OPENING_TURN" | "NORMAL_TURN" | "GAME_OVER";
 type AutoTestSpeed = "SLOW" | "FAST" | "VERY_FAST" | "SAFE_TURBO";
 type AutoTestStrategy = "RANDOM_LEGAL" | "BALANCED" | "CONTROLLED_COMEBACK";
+type PlaySetupMode = "MENU" | "TWO_PLAYERS" | "COMPUTER_BALANCED" | "COMPUTER_AGGRESSIVE";
 
 type Point = {
   owner: Player | null;
@@ -276,6 +277,7 @@ const PLAYER_RECORDS_KEY = "warPeaceBackgammonPlayerRecordsV1";
 const AUTO_TEST_REPORT_KEY = "warPeaceBackgammonAutoTestReportV1";
 const SAVE_KEY = "warPeaceBackgammonSaveV1";
 const BETA_PASSWORD = "warpeace1776";
+const PUBLIC_SHOW_TESTING_TOOLS = false;
 const BETA_ACCESS_KEY = "warPeaceBackgammonBetaAccessV1";
 const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
   SLOW: "Slow",
@@ -1279,6 +1281,8 @@ export default function App() {
   const [showRecords, setShowRecords] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("warPeaceBackgammonSoundEnabledV1") !== "off");
   const [showTestingPanel, setShowTestingPanel] = useState(false);
+  const [playSetupMode, setPlaySetupMode] = useState<PlaySetupMode>("MENU");
+  const [computerStrategy, setComputerStrategy] = useState<AutoTestStrategy>("BALANCED");
   const [gameRolls, setGameRolls] = useState(0);
   const [gamePlayableRolls, setGamePlayableRolls] = useState(0);
   const [gameUnplayableRolls, setGameUnplayableRolls] = useState(0);
@@ -1444,6 +1448,42 @@ export default function App() {
   );
   const whiteRecord = recordBook.players[playerRecordKey(cleanWhitePlayerName)];
   const blackRecord = recordBook.players[playerRecordKey(cleanBlackPlayerName)];
+  const isComputerGame = playSetupMode === "COMPUTER_BALANCED" || playSetupMode === "COMPUTER_AGGRESSIVE";
+  const isComputerController = isComputerGame && controller === "Black" && winner === null;
+  const setupComplete = playSetupMode !== "MENU";
+
+
+  function startTwoPlayerGame(): void {
+    setPlaySetupMode("TWO_PLAYERS");
+    setWhitePlayerName("White Player");
+    setBlackPlayerName("Black Player");
+    setComputerStrategy("BALANCED");
+    resetNewGame();
+    setMessage("Two-player game selected. Enter player names, then roll opening dice.");
+  }
+
+  function startComputerGame(strategy: AutoTestStrategy): void {
+    const aggressive = strategy === "CONTROLLED_COMEBACK";
+    setPlaySetupMode(aggressive ? "COMPUTER_AGGRESSIVE" : "COMPUTER_BALANCED");
+    setComputerStrategy(strategy);
+    setWhitePlayerName("Human Player");
+    setBlackPlayerName(aggressive ? "Computer 2 - Aggressive" : "Computer 1 - Balanced");
+    resetNewGame();
+    setMessage(`${aggressive ? "Computer 2 - Aggressive" : "Computer 1 - Balanced"} selected. You are White. Roll opening dice.`);
+  }
+
+  function backToGameMenu(): void {
+    setPlaySetupMode("MENU");
+    resetNewGame();
+    setMessage("Choose how you want to play.");
+  }
+
+  function chooseComputerOpeningMode(): Mode {
+    if (computerStrategy === "CONTROLLED_COMEBACK") {
+      return Math.random() < 0.65 ? "WAR" : "PEACE";
+    }
+    return Math.random() < 0.5 ? "WAR" : "PEACE";
+  }
 
   async function animateDiceRoll(): Promise<void> {
     setDiceRolling(true);
@@ -1833,6 +1873,12 @@ export default function App() {
   }
 
   async function rollOpening(): Promise<void> {
+    if (!setupComplete) {
+      setMessage("Choose Play Computer 1, Play Computer 2, or Two Players first.");
+      flashWarning("Choose a game type first.");
+      return;
+    }
+
     if (!playersReady) {
       setMessage("Enter two different player names before rolling opening dice.");
       flashWarning("Enter two different player names.");
@@ -1954,6 +2000,8 @@ export default function App() {
   }
 
   function chooseMode(chosenMode: Mode): void {
+    if (isComputerController && openingWinner !== "Black") { setMessage("Computer is thinking."); return; }
+
     if (!awaitingModeChoice || !openingDice || !openingWinner) {
       setMessage("Roll opening dice first, then choose WAR or PEACE.");
       return;
@@ -2015,6 +2063,7 @@ export default function App() {
         // Blocked doubles do not change doctrine/theme. The dice still display,
         // then the automatic no-move pass effect will advance the game.
         nextMode = mode;
+        flashBanner("BLOCKED DOUBLES - THEME HOLDS", 1800);
       }
     }
 
@@ -2039,7 +2088,9 @@ export default function App() {
     setTurnMoveCount(0);
     setMessage(
       noLegalMoves
-        ? `${nextPlayer} rolled ${dice.join(", ")}. No legal moves — turn passes.`
+        ? rolledDoubles
+          ? `${nextPlayer} rolled doubles ${d1}-${d2}, but has no legal move. Theme stays ${nextMode}; turn passes.`
+          : `${nextPlayer} rolled ${dice.join(", ")}. No legal moves — turn passes.`
         : `${nextPlayer}'s turn. Rolled ${dice.join(", ")}.`
     );
   }
@@ -2487,7 +2538,8 @@ export default function App() {
     return entryBlots * 18 + openEntries * 4 + closedPenalty;
   }
 
-  function scoreAutoTestMove(move: Move): number {
+  function scoreAutoTestMove(move: Move, strategyOverride: AutoTestStrategy = autoTestStrategy): number {
+    const activeStrategy = strategyOverride;
     const beforePips = calculatePipCount(board, currentPlayer, bar);
     const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
     const deficit = Math.max(0, beforePips - opponentPips);
@@ -2505,7 +2557,7 @@ export default function App() {
     if (move.isBarEntry) score += 45;
     if (move.isHit) score += mode === "WAR" ? 95 : 45;
 
-    if (autoTestStrategy === "RANDOM_LEGAL") {
+    if (activeStrategy === "RANDOM_LEGAL") {
       score += Math.random() * 100;
       return score;
     }
@@ -2518,13 +2570,13 @@ export default function App() {
       landingPoint.owner === currentPlayer &&
       landingPoint.count === 1;
 
-    if (autoTestStrategy === "BALANCED") {
+    if (activeStrategy === "BALANCED") {
       score -= newBlots * 16;
       if (createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score -= 25;
       if (deficit >= 40 && createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score += 18;
     }
 
-    if (autoTestStrategy === "CONTROLLED_COMEBACK") {
+    if (activeStrategy === "CONTROLLED_COMEBACK") {
       const landingInMyHome = createsLandingBlot && move.to >= 0 && isPlayerHomeBoard(currentPlayer, move.to);
       const landingInMyEntryZone = createsLandingBlot && move.to >= 0 && isPlayerEntryZone(currentPlayer, move.to);
       const landingCanBeHit = createsLandingBlot && move.to >= 0 && isPointHittableByOpponent(applied.board, currentPlayer, move.to);
@@ -2574,7 +2626,7 @@ export default function App() {
     return score;
   }
 
-  function chooseAutoTestMove(): Move | null {
+  function chooseAutoTestMove(strategyOverride: AutoTestStrategy = autoTestStrategy): Move | null {
     if (legalMoves.length === 0) return null;
 
     const barEntryMoves = legalMoves.filter((move) => move.isBarEntry);
@@ -2584,7 +2636,7 @@ export default function App() {
     let bestScore = Number.NEGATIVE_INFINITY;
 
     for (const move of candidateMoves) {
-      const score = scoreAutoTestMove(move);
+      const score = scoreAutoTestMove(move, strategyOverride);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -2815,6 +2867,7 @@ export default function App() {
   }
 
   function beginDrag(index: number, event?: React.PointerEvent<HTMLDivElement>): void {
+    if (isComputerController) { setMessage("Computer is thinking."); return; }
     if (awaitingModeChoice || remainingDice.length === 0 || bar[currentPlayer] > 0) return;
 
     const point = board[index];
@@ -2994,7 +3047,63 @@ export default function App() {
     off,
   ]);
 
+  useEffect(() => {
+    if (autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
+    if (!isComputerController || winner !== null) return;
+
+    const delay = remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0 ? 1150 : 650;
+    const timer = window.setTimeout(() => {
+      if (winner || diceRolling) return;
+
+      if (canChooseDoctrine && openingWinner === "Black") {
+        const chosenMode = chooseComputerOpeningMode();
+        setMessage(`Computer chooses ${chosenMode}.`);
+        chooseMode(chosenMode);
+        return;
+      }
+
+      if (!turnIsPlayable || awaitingModeChoice) return;
+
+      if (canSubmitTurn) {
+        submitTurn();
+        return;
+      }
+
+      if (remainingDice.length > 0 && legalMoves.length === 0) return;
+
+      const move = chooseAutoTestMove(computerStrategy);
+      if (move) executeMove(move);
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    autoTestRunning,
+    autoTestError,
+    diceRolling,
+    draggingPoint,
+    isComputerController,
+    winner,
+    gamePhase,
+    canChooseDoctrine,
+    openingWinner,
+    turnIsPlayable,
+    awaitingModeChoice,
+    canSubmitTurn,
+    remainingDice,
+    legalMoves.length,
+    turnMoveCount,
+    computerStrategy,
+    currentPlayer,
+    controller,
+    mode,
+    board,
+    bar,
+    off,
+  ]);
+
   function handlePointClick(index: number): void {
+    if (isComputerController) { setMessage("Computer is thinking."); return; }
+
     const completedWinner = winner ?? checkForWinner(off);
     if (completedWinner) {
       if (winner === null) endGame(completedWinner, "BEAR_OFF", board, bar, off);
@@ -4029,6 +4138,58 @@ export default function App() {
         </div>
       )}
 
+      {playSetupMode === "MENU" && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9000,
+            background: "radial-gradient(circle at 50% 18%, rgba(70,35,12,0.97), rgba(8,3,1,0.98) 58%, rgba(0,0,0,0.99))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(92vw, 760px)",
+              borderRadius: 26,
+              padding: "clamp(20px, 3vw, 34px)",
+              background: "linear-gradient(145deg, rgba(255,235,180,0.18), rgba(20,8,2,0.96))",
+              border: "3px solid rgba(255,213,128,0.75)",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.78), inset 0 1px 0 rgba(255,235,180,0.22)",
+              color: "#ffe6ad",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "clamp(30px, 5vw, 58px)", fontWeight: 900, color: "#f0cf8a", textShadow: "0 5px 18px rgba(0,0,0,0.8)", marginBottom: 8 }}>
+              War & Peace Backgammon
+            </div>
+            <div style={{ fontSize: "clamp(14px, 1.5vw, 19px)", fontWeight: 800, color: "#fff2c8", marginBottom: 22, lineHeight: 1.35 }}>
+              Choose a game type. You can still open developer testing tools at the bottom in the testing version.
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px", background: "linear-gradient(145deg,#fff0b8,#b87321 62%,#3b1605)", color: "#1a0900" }} onClick={() => startComputerGame("BALANCED")}>
+                Play Computer 1 - Balanced
+              </button>
+              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Solid, careful, normal computer opponent.</div>
+
+              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px", background: "linear-gradient(145deg,#ffd6b0,#b73221 58%,#2d0500)", color: "#210400" }} onClick={() => startComputerGame("CONTROLLED_COMEBACK")}>
+                Play Computer 2 - Aggressive
+              </button>
+              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Riskier War & Peace specialist. Looks for comeback chances when behind.</div>
+
+              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px" }} onClick={startTwoPlayerGame}>
+                Two Players
+              </button>
+              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Two people on the same computer or screen.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h1
         style={{
           width: shellWidth,
@@ -4041,6 +4202,17 @@ export default function App() {
       >
         War & Peace Backgammon
       </h1>
+
+      {setupComplete && (
+        <div style={{ width: shellWidth, margin: "0 auto 8px", display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ color: "#ffe6ad", fontSize: "clamp(12px, 1.1vw, 15px)", fontWeight: 900, padding: "8px 12px", border: "1px solid rgba(255,213,128,0.45)", borderRadius: 999, background: "rgba(0,0,0,0.28)" }}>
+            {playSetupMode === "TWO_PLAYERS" ? "Two Players" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Human vs Computer 2 - Aggressive" : "Human vs Computer 1 - Balanced"}
+          </div>
+          <button type="button" style={{ ...luxuryButton, minWidth: 142, padding: "8px 12px" }} onClick={backToGameMenu}>
+            Change Game Type
+          </button>
+        </div>
+      )}
 
       <div
         style={{
@@ -4081,14 +4253,14 @@ export default function App() {
             <input
               value={value}
               onChange={(event) => setter(event.target.value)}
-              disabled={!canEditPlayers}
+              disabled={!canEditPlayers || (isComputerGame && color === "Black")}
               list="war-peace-known-players"
               style={{
                 width: "100%",
                 boxSizing: "border-box",
                 borderRadius: 12,
                 border: "2px solid rgba(255,226,138,0.68)",
-                background: canEditPlayers ? "#fff8df" : "rgba(255,248,223,0.72)",
+                background: canEditPlayers && !(isComputerGame && color === "Black") ? "#fff8df" : "rgba(255,248,223,0.72)",
                 color: "#1b0b03",
                 padding: "7px 9px",
                 fontSize: "clamp(14px, 1.35vw, 18px)",
@@ -4879,6 +5051,7 @@ export default function App() {
         </div>
       </div>
 
+      {PUBLIC_SHOW_TESTING_TOOLS && (
       <div
         style={{
           width: shellWidth,
@@ -4981,6 +5154,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
             <div style={{ display: "none" }}>
         {showMoveLog && moveLog.length > 0 && (
