@@ -978,78 +978,93 @@ function rollDie(): number {
   return Math.floor(Math.random() * 6) + 1;
 }
 
-function playClickSound(): void {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return;
+let sharedAudioContext: AudioContext | null = null;
 
-  const ctx = new AudioContextClass();
+function getAudioContext(): AudioContext | null {
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+
+  if (!sharedAudioContext) {
+    sharedAudioContext = new AudioContextClass();
+  }
+
+  if (sharedAudioContext.state === "suspended") {
+    void sharedAudioContext.resume();
+  }
+
+  return sharedAudioContext;
+}
+
+function playTone(
+  frequency: number,
+  duration: number,
+  volume = 0.16,
+  type: OscillatorType = "sine",
+  delay = 0
+): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
+  const start = ctx.currentTime + delay;
 
-  oscillator.type = "sine";
-  oscillator.frequency.value = 520;
-  gain.gain.setValueAtTime(0.08, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+
   oscillator.connect(gain);
   gain.connect(ctx.destination);
-  oscillator.start();
-  oscillator.stop(ctx.currentTime + 0.08);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.03);
+}
+
+function playClickSound(): void {
+  playTone(620, 0.1, 0.18, "triangle");
+}
+
+function playDiceSound(): void {
+  playTone(240, 0.055, 0.13, "square", 0);
+  playTone(360, 0.055, 0.11, "triangle", 0.055);
+  playTone(280, 0.065, 0.1, "square", 0.11);
 }
 
 function playErrorSound(): void {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const ctx = new AudioContextClass();
-  const first = ctx.createOscillator();
-  const second = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  first.type = "square";
-  second.type = "sawtooth";
-  first.frequency.setValueAtTime(160, ctx.currentTime);
-  first.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.18);
-  second.frequency.setValueAtTime(120, ctx.currentTime);
-  second.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.18);
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.09, ctx.currentTime + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-
-  first.connect(gain);
-  second.connect(gain);
-  gain.connect(ctx.destination);
-  first.start();
-  second.start();
-  first.stop(ctx.currentTime + 0.22);
-  second.stop(ctx.currentTime + 0.22);
+  playTone(155, 0.16, 0.2, "sawtooth", 0);
+  playTone(95, 0.18, 0.16, "square", 0.08);
 }
 
+function playHitSound(): void {
+  playTone(180, 0.07, 0.18, "square", 0);
+  playTone(90, 0.12, 0.13, "sawtooth", 0.055);
+}
+
+function playCaptureSound(): void {
+  playTone(140, 0.055, 0.2, "square", 0);
+  playTone(72, 0.14, 0.16, "sawtooth", 0.045);
+  playTone(220, 0.055, 0.12, "triangle", 0.13);
+}
+
+function playPeaceViolationSound(): void {
+  playTone(560, 0.08, 0.18, "square", 0);
+  playTone(280, 0.11, 0.16, "sawtooth", 0.075);
+  playTone(760, 0.12, 0.14, "triangle", 0.18);
+}
 
 function playWinFanfare(): void {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const ctx = new AudioContextClass();
   const melody = [523, 659, 784, 1046, 1318];
-
   melody.forEach((frequency, index) => {
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const start = ctx.currentTime + index * 0.13;
-
-    oscillator.type = index % 2 === 0 ? "triangle" : "sine";
-    oscillator.frequency.setValueAtTime(frequency, start);
-
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.13, start + 0.025);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
-
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.start(start);
-    oscillator.stop(start + 0.31);
+    playTone(frequency, 0.24, 0.16, index % 2 === 0 ? "triangle" : "sine", index * 0.13);
   });
 }
+
+function playSoundTest(): void {
+  playTone(440, 0.09, 0.16, "triangle", 0);
+  playTone(660, 0.11, 0.15, "sine", 0.1);
+}
+
 
 function moveKey(move: Move): string {
   return `${move.from}:${move.to}:${move.die}:${move.isBarEntry ? 1 : 0}:${move.isBearOff ? 1 : 0}`;
@@ -1069,8 +1084,8 @@ function formatFinalResult(result: FinalResult): string {
 
 function describeMove(move: Move): string {
   if (move.isBearOff) return `Bear off from ${pointLabel(move.from)} with ${move.die}`;
-  if (move.isBarEntry) return `Enter from bar to ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - HIT" : ""}`;
-  return `${pointLabel(move.from)} -> ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - HIT" : ""}`;
+  if (move.isBarEntry) return `Enter from bar to ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - POW! Captured" : ""}`;
+  return `${pointLabel(move.from)} -> ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - POW! Captured" : ""}`;
 }
 
 function describeSequence(sequence: Sequence): string {
@@ -1087,7 +1102,7 @@ function describeSequenceStats(sequence: Sequence): string {
 
 function formatMoveLogEntry(entry: MoveLogEntry): string {
   const tags: string[] = [];
-  if (entry.move.isHit) tags.push("HIT");
+  if (entry.move.isHit) tags.push("POW! CAPTURED");
   if (entry.move.isBearOff) tags.push("OFF");
   if (entry.move.isBarEntry) tags.push("BAR");
   if (entry.controlState === "ENEMY_CONTROL") tags.push("ENEMY CONTROL");
@@ -1835,6 +1850,7 @@ export default function App() {
 
     setMessage("Rolling opening dice...");
     await animateDiceRoll();
+    if (soundEnabled) playDiceSound();
 
     let whiteDie = rollDie();
     let blackDie = rollDie();
@@ -1967,6 +1983,7 @@ export default function App() {
 
   async function nextTurn(): Promise<void> {
     await animateDiceRoll();
+    if (soundEnabled) playDiceSound();
 
     const nextPlayer = opponent(currentPlayer);
     let d1 = rollDie();
@@ -2186,10 +2203,15 @@ export default function App() {
     setOpeningTurnRequiresMove(false);
     setController(nextController);
     setControlState(nextControlState);
-    soundClick();
+    if (soundEnabled) {
+      if (peaceViolationTriggersEnemyControl) playPeaceViolationSound();
+      else if (move.isHit) playCaptureSound();
+      else playClickSound();
+    }
     triggerMoveAnimation(move);
 
-    if (move.isHit) flashBanner("HIT");
+    if (peaceViolationTriggersEnemyControl) flashBanner("PEACE VIOLATION - ENEMY CONTROL", 2200);
+    else if (move.isHit) flashBanner("POW! CAPTURED", 1300);
     if (move.isBearOff) flashBanner("BEAR OFF");
 
     const completedWinner = checkForWinner(result.off);
@@ -3817,6 +3839,20 @@ export default function App() {
           82% { opacity: 1; transform: translateY(0) scale(1); }
           100% { opacity: 0; transform: translateY(-6px) scale(0.99); }
         }
+        @keyframes capturePop {
+          0% { opacity: 0; transform: scale(0.45) rotate(-8deg); filter: blur(3px); }
+          18% { opacity: 1; transform: scale(1.16) rotate(3deg); filter: blur(0); }
+          42% { opacity: 1; transform: scale(0.98) rotate(0); }
+          82% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.08) translateY(-18px); }
+        }
+        @keyframes peaceViolationBlast {
+          0% { opacity: 0; transform: scale(0.72); filter: saturate(1.8) blur(2px); }
+          12% { opacity: 1; transform: scale(1.08); filter: saturate(1.5) blur(0); }
+          28% { transform: scale(0.98); }
+          70% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.05) translateY(-26px); }
+        }
         @keyframes dragPulse {
           0% { filter: brightness(1); }
           100% { filter: brightness(1.2); }
@@ -3908,14 +3944,26 @@ export default function App() {
             justifyContent: "center",
             zIndex: 9999,
             pointerEvents: "none",
-            animation: turnBanner.startsWith("DOUBLES - ") ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards" : turnBanner.includes("WINS") ? "winSpectacle 3s ease forwards" : "cinematicFade 1.3s ease forwards",
+            animation: turnBanner.startsWith("DOUBLES - ")
+              ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards"
+              : turnBanner.startsWith("PEACE VIOLATION")
+              ? "peaceViolationBlast 2.2s ease forwards"
+              : turnBanner.startsWith("POW!")
+              ? "capturePop 1.3s ease forwards"
+              : turnBanner.includes("WINS")
+              ? "winSpectacle 3s ease forwards"
+              : "cinematicFade 1.3s ease forwards",
           }}
         >
           <div
             style={{
               padding: "24px 38px",
               borderRadius: 22,
-              background: turnBanner.includes("WAR")
+              background: turnBanner.startsWith("PEACE VIOLATION")
+                ? "linear-gradient(135deg,#003a8c 0%,#1b75ff 38%,#ffe66d 50%,#ff4a1c 62%,#6a0000 100%)"
+                : turnBanner.startsWith("POW!")
+                ? "radial-gradient(circle at 50% 35%,#fff7b8 0%,#ffb11f 28%,#b13c00 56%,#330800 100%)"
+                : turnBanner.includes("WAR")
                 ? "linear-gradient(145deg,#620000,#e51b1b)"
                 : turnBanner.includes("PEACE")
                 ? "linear-gradient(145deg,#003a8c,#2298e6)"
@@ -3923,14 +3971,33 @@ export default function App() {
                 ? "linear-gradient(135deg,#fff7c7 0%,#f4cf5e 22%,#b87816 48%,#fff0a8 66%,#6e3f08 100%)"
                 : "linear-gradient(145deg,#1b1207,#7b5524,#d4a14d)",
               color: "white",
-              fontSize: turnBanner.includes("DOUBLES") ? "clamp(17px,2.6vw,32px)" : turnBanner.includes("WINS OPENING ROLL") ? "clamp(20px,3vw,36px)" : "clamp(30px,5vw,68px)",
+              fontSize: turnBanner.startsWith("PEACE VIOLATION")
+                ? "clamp(26px,4.6vw,58px)"
+                : turnBanner.startsWith("POW!")
+                ? "clamp(34px,6vw,78px)"
+                : turnBanner.includes("DOUBLES")
+                ? "clamp(17px,2.6vw,32px)"
+                : turnBanner.includes("WINS OPENING ROLL")
+                ? "clamp(20px,3vw,36px)"
+                : "clamp(30px,5vw,68px)",
               fontWeight: 900,
               letterSpacing: 2,
               boxShadow: "0 20px 40px rgba(0,0,0,0.65)",
               textShadow: "0 3px 12px rgba(0,0,0,0.6)",
             }}
           >
-            {turnBanner.includes("WINS") ? (
+            {turnBanner.startsWith("PEACE VIOLATION") ? (
+              <div style={{ position: "relative", minWidth: "clamp(280px, 44vw, 650px)", textAlign: "center", padding: "10px 18px" }}>
+                <div style={{ fontSize: "0.42em", letterSpacing: 3, color: "#d8f0ff", marginBottom: 2 }}>PEACE VIOLATION</div>
+                <div style={{ lineHeight: 0.95, textShadow: "0 0 18px rgba(255,238,120,0.9), 0 4px 10px rgba(0,0,0,0.75)" }}>ENEMY CONTROL</div>
+                <div style={{ fontSize: "0.3em", marginTop: 8, letterSpacing: 1.6, color: "#fff0aa" }}>Opponent controls the remaining moves</div>
+              </div>
+            ) : turnBanner.startsWith("POW!") ? (
+              <div style={{ position: "relative", minWidth: "clamp(230px, 34vw, 520px)", textAlign: "center", padding: "4px 14px" }}>
+                <div style={{ fontSize: "1.05em", lineHeight: 0.9, textShadow: "0 0 20px rgba(255,244,120,0.95), 0 5px 12px rgba(0,0,0,0.8)" }}>POW!</div>
+                <div style={{ fontSize: "0.38em", letterSpacing: 3, marginTop: 8 }}>CAPTURED</div>
+              </div>
+            ) : turnBanner.includes("WINS") ? (
               <div style={{ position: "relative", minWidth: "clamp(240px, 36vw, 520px)", textAlign: "center", padding: "8px 16px" }}>
                 {Array.from({ length: 18 }).map((_, index) => (
                   <span
@@ -4289,8 +4356,14 @@ export default function App() {
             color: soundEnabled ? "#1a0900" : luxuryButton.color,
           }}
           type="button"
-          onClick={() => setSoundEnabled((enabled) => !enabled)}
-          title="Turn game sounds on or off"
+          onClick={() => {
+            setSoundEnabled((enabled) => {
+              const next = !enabled;
+              if (next) playSoundTest();
+              return next;
+            });
+          }}
+          title="Turn game sounds on or off. Turning sound on plays a quick test tone."
         >
           Sound {soundEnabled ? "On" : "Off"}
         </button>
