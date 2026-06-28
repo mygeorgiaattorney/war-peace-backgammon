@@ -3333,15 +3333,15 @@ export default function App() {
 
     return Array.from({ length: visibleCount }).map((_, index) => {
       const checkerStyle: React.CSSProperties = {
-        width: "clamp(36px, 3vw, 46px)",
-        height: "clamp(36px, 3vw, 46px)",
+        width: "clamp(40px, 3.4vw, 52px)",
+        height: "clamp(40px, 3.4vw, 52px)",
         borderRadius: "50%",
         background:
           owner === "White"
             ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
             : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
         border: owner === "White" ? "2px solid #f6e6bd" : "2px solid #050505",
-        marginTop: "clamp(-13px, -0.8vw, -8px)",
+        marginTop: "clamp(-16px, -1vw, -10px)",
         zIndex: 10 + index,
         boxShadow:
           "0 9px 13px rgba(0,0,0,0.55)" +
@@ -3420,7 +3420,7 @@ export default function App() {
         style={{
           position: "relative",
           width: "100%",
-          height: "clamp(220px, 30vh, 340px)",
+          height: "clamp(205px, 31dvh, 300px)",
           cursor: isDraggingOrigin ? "grabbing" : isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
           touchAction: "none",
           userSelect: "none",
@@ -3433,8 +3433,8 @@ export default function App() {
           style={{
             position: "absolute",
             width: "100%",
-            maxWidth: "clamp(44px, 4.1vw, 58px)",
-            height: "clamp(180px, 24vh, 286px)",
+            maxWidth: "none",
+            height: "clamp(150px, 21dvh, 220px)",
             top: isTop ? 0 : undefined,
             bottom: isTop ? undefined : 0,
             background: triangleColor,
@@ -3474,8 +3474,8 @@ export default function App() {
             display: "flex",
             flexDirection: isTop ? "column" : "column-reverse",
             alignItems: "center",
-            marginTop: isTop ? 8 : 0,
-            marginBottom: isTop ? 0 : 8,
+            marginTop: isTop ? 4 : 0,
+            marginBottom: isTop ? 0 : 4,
           }}
         >
           {isLegalDestination && (activeSource !== null || legalHelpActive) && (
@@ -3732,19 +3732,19 @@ export default function App() {
       <div
         aria-label={`${section === "top" ? "White" : "Black"} hit-checker bar`}
         style={{
-          width: "clamp(38px, 3vw, 48px)",
-          minWidth: 38,
-          background: "linear-gradient(90deg, #120804, #7a481f 35%, #b27937 50%, #7a481f 65%, #120804)",
-          borderLeft: "2px solid rgba(255,210,120,0.25)",
-          borderRight: "2px solid rgba(0,0,0,0.65)",
-          boxShadow: "inset 0 0 20px rgba(0,0,0,0.78), 0 0 8px rgba(0,0,0,0.35)",
+          width: "clamp(3px, 0.35vw, 5px)",
+          minWidth: 3,
+          background: "linear-gradient(180deg, #050201, #1b0d04 45%, #050201)",
+          borderLeft: "1px solid rgba(255,210,120,0.12)",
+          borderRight: "1px solid rgba(0,0,0,0.75)",
+          boxShadow: "inset 0 0 6px rgba(0,0,0,0.9), 0 0 5px rgba(0,0,0,0.45)",
           display: "flex",
           alignItems: section === "top" ? "flex-end" : "flex-start",
           justifyContent: "center",
-          overflow: "hidden",
-          borderRadius: 4,
-          paddingTop: section === "bottom" ? 8 : 0,
-          paddingBottom: section === "top" ? 8 : 0,
+          overflow: "visible",
+          borderRadius: 2,
+          paddingTop: section === "bottom" ? 6 : 0,
+          paddingBottom: section === "top" ? 6 : 0,
         }}
       >
         <TrayCheckers player={player} count={count} />
@@ -3776,7 +3776,7 @@ export default function App() {
   const modeIsWar = mode === "WAR";
   const enemyControl = controlState === "ENEMY_CONTROL";
   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
-  const shellWidth = "min(calc(100vw - 12px), 1120px)";
+  const shellWidth = "min(calc(100vw - 12px), 1180px)";
   const activeTurnIsWhite = currentPlayer === "White";
   const activeTurnGlowBackground = enemyControl
     ? "linear-gradient(145deg, #ffe76a, #d77b00 58%, #3b1000)"
@@ -3930,18 +3930,29 @@ export default function App() {
       onDragStart={(event) => event.preventDefault()}
       style={{
         background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
-        minHeight: "100vh",
+        height: "100dvh",
+        minHeight: "100dvh",
         color: "white",
-        padding: "clamp(3px, 0.55vw, 8px)",
+        padding: "clamp(5px, 0.7vw, 9px)",
         boxSizing: "border-box",
         width: "100vw",
         fontFamily: "Georgia, 'Times New Roman', serif",
-        overflowX: "hidden",
+        overflow: "hidden",
         maxWidth: "100vw",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <style>{`
+        html, body, #root {
+          width: 100%;
+          height: 100%;
+          margin: 0;
+          overflow: hidden;
+        }
+
         * {
+          box-sizing: border-box;
           user-select: none;
           -webkit-user-select: none;
           -webkit-user-drag: none;
@@ -4052,8 +4063,8 @@ export default function App() {
         >
           <div
             style={{
-              width: "clamp(44px, 4.2vw, 58px)",
-              height: "clamp(44px, 4.2vw, 58px)",
+              width: "clamp(48px, 4.6vw, 64px)",
+              height: "clamp(48px, 4.6vw, 64px)",
               borderRadius: "50%",
               transform: "scale(1.12)",
               background:
@@ -4257,854 +4268,176 @@ export default function App() {
         </div>
       )}
 
-      <h1
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(3px, 0.45vw, 6px)",
-          fontSize: "clamp(20px, 2vw, 30px)",
-          letterSpacing: 0.4,
-          textShadow: "0 3px 8px rgba(0,0,0,0.7)",
-          color: "#f0cf8a",
-        }}
-      >
-        War & Peace Backgammon
-      </h1>
-
-      {setupComplete && (
-        <div style={{ width: shellWidth, margin: "0 auto 4px", display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
-          <div style={{ color: "#ffe6ad", fontSize: "clamp(12px, 1.1vw, 15px)", fontWeight: 900, padding: "8px 12px", border: "1px solid rgba(255,213,128,0.45)", borderRadius: 999, background: "rgba(0,0,0,0.28)" }}>
-            {playSetupMode === "TWO_PLAYERS" ? "Two Players" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Human vs Computer 2 - Aggressive" : "Human vs Computer 1 - Balanced"}
-          </div>
-          <button type="button" style={{ ...luxuryButton, minWidth: 142, padding: "8px 12px" }} onClick={backToGameMenu}>
-            Change Game Type
-          </button>
-        </div>
-      )}
-
       <div
         style={{
           width: shellWidth,
-          margin: "0 auto clamp(4px, 0.5vw, 7px)",
+          margin: "0 auto clamp(5px, 0.65vw, 8px)",
+          minHeight: "clamp(58px, 8dvh, 76px)",
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: 4,
+          gridTemplateColumns: "minmax(230px, 0.88fr) minmax(430px, 1.55fr)",
+          gap: 8,
           alignItems: "stretch",
+          borderRadius: 16,
+          border: "2px solid rgba(226,171,87,0.58)",
+          background: "linear-gradient(145deg, rgba(92,50,22,0.92), rgba(22,9,3,0.96))",
+          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.45)",
+          padding: "clamp(5px, 0.65vw, 8px) clamp(7px, 0.8vw, 11px)",
         }}
       >
-        {([
-          ["White", whitePlayerName, setWhitePlayerName, whiteRecord] as const,
-          ["Black", blackPlayerName, setBlackPlayerName, blackRecord] as const,
-        ]).map(([color, value, setter, stats]) => (
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div
-            key={color}
             style={{
-              background: "linear-gradient(145deg, rgba(255,238,190,0.16), rgba(20,8,2,0.86))",
-              border: "2px solid rgba(226,171,87,0.55)",
-              borderRadius: 13,
-              padding: "4px 7px",
-              boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.34)",
+              fontSize: "clamp(20px, 2.15vw, 30px)",
+              lineHeight: 1,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              textShadow: "0 3px 8px rgba(0,0,0,0.7)",
+              color: "#f0cf8a",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
           >
-            <label
-              style={{
-                display: "block",
-                color: color === "White" ? "#fff2c8" : "#d7d7d7",
-                fontSize: "clamp(11px, 1vw, 13px)",
-                fontWeight: 900,
-                letterSpacing: 0.7,
-                marginBottom: 3,
-              }}
-            >
-              {color} Player
-            </label>
-            <input
-              value={value}
-              onChange={(event) => setter(event.target.value)}
-              disabled={!canEditPlayers || (isComputerGame && color === "Black")}
-              list="war-peace-known-players"
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                borderRadius: 12,
-                border: "2px solid rgba(255,226,138,0.68)",
-                background: canEditPlayers && !(isComputerGame && color === "Black") ? "#fff8df" : "rgba(255,248,223,0.72)",
-                color: "#1b0b03",
-                padding: "5px 8px",
-                fontSize: "clamp(12px, 1.1vw, 16px)",
-                fontWeight: 900,
-                fontFamily: "Georgia, 'Times New Roman', serif",
-              }}
-            />
-            <div
-              style={{
-                marginTop: 3,
-                color: "#f3d18b",
-                fontSize: "clamp(10px, 0.85vw, 12px)",
-                fontWeight: 800,
-              }}
-            >
-              {stats
-                ? `${stats.wins}-${stats.losses} • ${formatWinRate(stats.wins, stats.games)} wins • avg margin ${averagePips(stats.totalLoserPipsWhenWon, stats.wins)} pips`
-                : "No prior games recorded."}
-            </div>
+            War &amp; Peace Backgammon
           </div>
-        ))}
-        <datalist id="war-peace-known-players">
-          {knownPlayers.map((player) => (
-            <option key={player.name} value={player.name} />
+          {setupComplete && (
+            <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+              <div
+                style={{
+                  minWidth: 0,
+                  color: "#ffe6ad",
+                  fontSize: "clamp(10px, 1vw, 13px)",
+                  fontWeight: 900,
+                  padding: "4px 9px",
+                  border: "1px solid rgba(255,213,128,0.45)",
+                  borderRadius: 999,
+                  background: "rgba(0,0,0,0.28)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {playSetupMode === "TWO_PLAYERS" ? "Two Players" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Human vs Computer 2 - Aggressive" : "Human vs Computer 1 - Balanced"}
+              </div>
+              <button type="button" style={{ ...luxuryButton, minWidth: 120, padding: "6px 10px", fontSize: 10 }} onClick={backToGameMenu}>
+                Change Game Type
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            minWidth: 0,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 6,
+            alignItems: "stretch",
+          }}
+        >
+          {([
+            ["White", whitePlayerName, setWhitePlayerName, whiteRecord] as const,
+            ["Black", blackPlayerName, setBlackPlayerName, blackRecord] as const,
+          ]).map(([color, value, setter, stats]) => (
+            <div
+              key={color}
+              style={{
+                minWidth: 0,
+                background: "linear-gradient(145deg, rgba(255,238,190,0.13), rgba(20,8,2,0.72))",
+                border: "1px solid rgba(226,171,87,0.46)",
+                borderRadius: 12,
+                padding: "4px 6px",
+                boxShadow: "inset 0 1px 0 rgba(255,230,170,0.12)",
+              }}
+            >
+              <label
+                style={{
+                  display: "block",
+                  color: color === "White" ? "#fff2c8" : "#d7d7d7",
+                  fontSize: "clamp(9px, 0.85vw, 11px)",
+                  fontWeight: 900,
+                  letterSpacing: 0.6,
+                  marginBottom: 2,
+                }}
+              >
+                {color} Player
+              </label>
+              <input
+                value={value}
+                onChange={(event) => setter(event.target.value)}
+                disabled={!canEditPlayers || (isComputerGame && color === "Black")}
+                list="war-peace-known-players"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  borderRadius: 9,
+                  border: "1px solid rgba(255,226,138,0.68)",
+                  background: canEditPlayers && !(isComputerGame && color === "Black") ? "#fff8df" : "rgba(255,248,223,0.72)",
+                  color: "#1b0b03",
+                  padding: "4px 7px",
+                  fontSize: "clamp(12px, 1.05vw, 15px)",
+                  fontWeight: 900,
+                  outline: "none",
+                  fontFamily: "Georgia, 'Times New Roman', serif",
+                }}
+              />
+              <div
+                style={{
+                  marginTop: 2,
+                  color: "rgba(255,231,183,0.72)",
+                  fontSize: "clamp(8px, 0.75vw, 10px)",
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {stats
+                  ? `${stats.wins}-${stats.losses} • ${formatWinRate(stats.wins, stats.games)} wins • avg ${averagePips(stats.totalLoserPipsWhenWon, stats.wins)} pips`
+                  : "No prior games recorded."}
+              </div>
+            </div>
           ))}
-        </datalist>
-      </div>
-
-      {!playersReady && gamePhase === "OPENING_ROLL" && (
-        <div
-          style={{
-            width: shellWidth,
-            margin: "0 auto clamp(7px, 0.8vw, 10px)",
-            color: "#fff2bc",
-            fontSize: "clamp(13px, 1.2vw, 15px)",
-            fontWeight: 900,
-            textAlign: "center",
-          }}
-        >
-          Enter two different player names to begin.
+          <datalist id="war-peace-known-players">
+            {knownPlayers.map((player) => (
+              <option key={player.name} value={player.name} />
+            ))}
+          </datalist>
         </div>
-      )}
+      </div>
 
       <div
         style={{
           width: shellWidth,
-          margin: "0 auto clamp(7px, 0.8vw, 10px)",
+          minHeight: 0,
+          flex: "1 1 auto",
+          margin: "0 auto",
           display: "grid",
-          gridTemplateColumns: "1.04fr 0.72fr 1fr 0.76fr 0.48fr",
-          gap: 6,
+          gridTemplateColumns: "minmax(0, 1fr) clamp(206px, 21vw, 246px)",
+          gap: "clamp(5px, 0.7vw, 9px)",
           alignItems: "stretch",
+          overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            background: doctrineBannerBackground,
-            borderRadius: 14,
-            border: "2px solid #9a6328",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: 58,
-            fontSize: enemyControl
-              ? "clamp(13px, 1.45vw, 17px)"
-              : neutralModeState
-              ? "clamp(18px, 2.2vw, 28px)"
-              : "clamp(30px, 3.8vw, 54px)",
-            fontWeight: "900",
-            color: enemyControl || neutralModeState ? "#1b0b00" : "white",
-            textAlign: "center",
-            padding: 4,
-            boxShadow: doctrineBannerShadow,
-            animation: doctrineBannerAnimation,
-            textShadow: neutralModeState ? "0 1px 2px rgba(255,255,255,0.28)" : "0 3px 8px rgba(0,0,0,0.5)",
-          }}
-        >
-          {doctrineBannerText}
-        </div>
-
-        <div
-          style={{
-            background: activeTurnGlowBackground,
-            border: activeTurnGlowBorder,
-            borderRadius: 16,
-            padding: 4,
-            textAlign: "center",
-            minHeight: 58,
-            color: activeTurnGlowColor,
-            boxShadow: enemyControl
-              ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
-              : activeTurnIsWhite
-              ? "0 0 20px rgba(255,248,190,0.72), inset 0 1px 0 rgba(255,255,255,0.55)"
-              : "0 0 20px rgba(190,105,30,0.72), inset 0 1px 0 rgba(255,210,140,0.22)",
-          }}
-        >
-          <div style={{ fontWeight: "bold", marginBottom: 1, fontSize: 9 }}>DICE</div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              animation: diceRolling ? "diceShake 0.6s infinite" : "none",
-              minHeight: 66,
-              alignItems: "center",
-            }}
-          >
-            {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index)) : "-"}
-          </div>
-        </div>
-
-        <CombinedPipPanel />
-
-        <GameFlowPanel />
-
-        <div
-          style={{
-            background: activeTurnGlowBackground,
-            border: activeTurnGlowBorder,
-            borderRadius: 16,
-            padding: "5px 6px",
-            textAlign: "center",
-            color: activeTurnGlowColor,
-            minHeight: 58,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            gap: 2,
-            boxShadow: enemyControl
-              ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
-              : activeTurnIsWhite
-              ? "0 0 18px rgba(255,248,190,0.62), inset 0 1px 0 rgba(255,255,255,0.5)"
-              : "0 0 18px rgba(190,105,30,0.68), inset 0 1px 0 rgba(255,210,140,0.22)",
-          }}
-        >
-          <div style={{ fontSize: "clamp(8px, 0.78vw, 10px)", fontWeight: 900, letterSpacing: 1.1, opacity: 0.82 }}>MOVE</div>
-          <div style={{ fontSize: "clamp(15px, 1.45vw, 21px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer.toUpperCase()}</div>
-          <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900, lineHeight: 1 }}>
-            {enemyControl || controller !== currentPlayer ? "⚡" : "●"}
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "none",
-          }}
-        >
-          <button
-            style={{
-              ...luxuryButton,
-              minWidth: 66,
-              padding: "7px 10px",
-              fontSize: 10,
-              background: confirmResign
-                ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
-                : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
-              color: confirmResign ? "#fff3d0" : "#f3d18b",
-              border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
-              boxShadow: confirmResign
-                ? "0 0 18px rgba(255,80,40,0.65), inset 0 1px 0 rgba(255,220,150,0.25)"
-                : "inset 0 1px 0 rgba(255,220,150,0.18), 0 5px 14px rgba(0,0,0,0.55)",
-              opacity: canResign ? 1 : 0.45,
-              cursor: canResign ? "pointer" : "not-allowed",
-            }}
-            disabled={!canResign}
-            onClick={resignGame}
-            title={confirmResign ? "Confirm resignation" : "Resign game"}
-          >
-            {confirmResign ? "Confirm" : "Resign"}
-          </button>
-        </div>
-      </div>
-
+        <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>
       <div
         style={{
-          width: shellWidth,
-          margin: "0 auto clamp(4px, 0.5vw, 7px)",
-          display: "flex",
-          gap: 6,
-          flexWrap: "wrap",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <button
-          style={{
-            ...luxuryButton,
-            order: 1,
-            opacity: canRollOpening ? 1 : 0.45,
-            cursor: canRollOpening ? "pointer" : "not-allowed",
-          }}
-          disabled={!canRollOpening}
-          onClick={rollOpening}
-        >
-          Roll Opening Dice
-        </button>
-
-        {canChooseDoctrine && (
-          <>
-            <button
-              style={{
-                ...luxuryButton,
-                background: "linear-gradient(145deg, #ffdbb0, #a00000)",
-                color: "white",
-                minWidth: 112,
-              }}
-              onClick={() => chooseMode("WAR")}
-            >
-              Choose WAR
-            </button>
-            <button
-              style={{
-                ...luxuryButton,
-                background: "linear-gradient(145deg, #d9efff, #005aa8)",
-                color: "white",
-                minWidth: 112,
-              }}
-              onClick={() => chooseMode("PEACE")}
-            >
-              Choose PEACE
-            </button>
-          </>
-        )}
-
-        <button
-          style={{
-            ...luxuryButton,
-            order: 3,
-            minWidth: 62,
-            padding: "7px 11px",
-            fontSize: 11,
-            opacity: history.length > 0 ? 1 : 0.58,
-          }}
-          onClick={undoMove}
-        >
-          Undo
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            order: 4,
-            minWidth: 62,
-            padding: "7px 11px",
-            fontSize: 11,
-            background: confirmResign
-              ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
-              : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
-            color: confirmResign ? "#fff3d0" : "#f3d18b",
-            border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
-            opacity: canResign ? 1 : 0.45,
-            cursor: canResign ? "pointer" : "not-allowed",
-          }}
-          disabled={!canResign}
-          onClick={resignGame}
-          title={confirmResign ? "Confirm resignation" : "Resign game"}
-        >
-          {confirmResign ? "Confirm" : "Resign"}
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            order: 2,
-            minWidth: "clamp(176px, 18vw, 240px)",
-            padding: "clamp(13px, 1.25vw, 17px) clamp(28px, 3vw, 42px)",
-            fontSize: "clamp(16px, 1.55vw, 22px)",
-            letterSpacing: 1.4,
-            background: canSubmitTurn
-              ? "linear-gradient(145deg, #fff5c8, #d89024 55%, #653000)"
-              : "linear-gradient(145deg, #201812, #050302)",
-            color: canSubmitTurn ? "#1a0900" : "#f3d18b",
-            border: canSubmitTurn ? "3px solid #ffe08a" : "2px solid #9a6328",
-            boxShadow: canSubmitTurn
-              ? "0 0 18px rgba(255,210,90,0.58), inset 0 1px 0 rgba(255,255,230,0.5)"
-              : "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
-            opacity: canSubmitTurn ? 1 : 0.45,
-            cursor: canSubmitTurn ? "pointer" : "not-allowed",
-            pointerEvents: "auto",
-            transform: canSubmitTurn ? "scale(1.03)" : "scale(1)",
-          }}
-          type="button"
-          disabled={!canSubmitTurn}
-          aria-disabled={!canSubmitTurn}
-          onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (canSubmitTurn) submitTurn(); else setMessage(gamePhase === "OPENING_ROLL" ? "Roll opening dice first." : "End Turn is not available yet."); }}
-          title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
-        >
-          END TURN
-        </button>
-
-        {gamePhase === "GAME_OVER" && (
-          <button
-            style={{
-              ...luxuryButton,
-              background: "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)",
-              color: "#1a0900",
-              minWidth: 110,
-            }}
-            type="button"
-            onClick={resetNewGame}
-            title="Start a new game from the opening roll."
-          >
-            New Game
-          </button>
-        )}
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 92,
-            background: showRecords
-              ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
-              : luxuryButton.background,
-            color: showRecords ? "#1a0900" : luxuryButton.color,
-          }}
-          type="button"
-          onClick={() => setShowRecords((visible) => !visible)}
-          title="Show player records and recent game history"
-        >
-          Records
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 104,
-            background: soundEnabled
-              ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
-              : luxuryButton.background,
-            color: soundEnabled ? "#1a0900" : luxuryButton.color,
-          }}
-          type="button"
-          onClick={() => {
-            setSoundEnabled((enabled) => {
-              const next = !enabled;
-              if (next) playSoundTest();
-              return next;
-            });
-          }}
-          title="Turn game sounds on or off. Turning sound on plays a quick test tone."
-        >
-          Sound {soundEnabled ? "On" : "Off"}
-        </button>
-
-        {false && showTestingPanel && (
-          <>
-        <select
-          value={autoTestSpeed}
-          onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}
-          disabled={autoTestRunning}
-          title="Auto Test speed"
-          style={{
-            ...luxuryButton,
-            minWidth: 116,
-            padding: "8px 10px",
-            opacity: autoTestRunning ? 0.58 : 1,
-            cursor: autoTestRunning ? "not-allowed" : "pointer",
-          }}
-        >
-          <option value="SLOW">Slow</option>
-          <option value="FAST">Fast</option>
-          <option value="VERY_FAST">Very Fast</option>
-          <option value="SAFE_TURBO">Safe Turbo</option>
-        </select>
-
-        <select
-          value={autoTestStrategy}
-          onChange={(event) => setAutoTestStrategy(event.target.value as AutoTestStrategy)}
-          disabled={autoTestRunning}
-          title="Auto Test computer strategy"
-          style={{
-            ...luxuryButton,
-            minWidth: 178,
-            padding: "8px 10px",
-            opacity: autoTestRunning ? 0.58 : 1,
-            cursor: autoTestRunning ? "not-allowed" : "pointer",
-          }}
-        >
-          <option value="RANDOM_LEGAL">Random Legal</option>
-          <option value="BALANCED">Balanced</option>
-          <option value="CONTROLLED_COMEBACK">Aggressive</option>
-        </select>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 104,
-            background: autoTestRunning
-              ? "linear-gradient(145deg, #ffefb0, #b06100 72%, #3a1600)"
-              : luxuryButton.background,
-            color: autoTestRunning ? "#180700" : luxuryButton.color,
-          }}
-          type="button"
-          onClick={autoTestRunning ? pauseAutoTest : () => startAutoTest(1)}
-          title="Let the computer play both sides for one game."
-        >
-          {autoTestRunning ? "Pause Auto Test" : "Run 1 Game"}
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 104,
-            opacity: autoTestRunning ? 0.45 : 1,
-            cursor: autoTestRunning ? "not-allowed" : "pointer",
-          }}
-          type="button"
-          onClick={() => startAutoTest(10)}
-          disabled={autoTestRunning}
-          title="Run 10 automated games for bug testing."
-        >
-          Run 10
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 104,
-            opacity: autoTestRunning ? 0.45 : 1,
-            cursor: autoTestRunning ? "not-allowed" : "pointer",
-          }}
-          type="button"
-          onClick={() => startAutoTest(100)}
-          disabled={autoTestRunning}
-          title="Run 100 automated games for bug testing."
-        >
-          Run 100
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 92,
-            opacity: diceRolling || autoTestRunning ? 0.45 : 1,
-            cursor: diceRolling || autoTestRunning ? "not-allowed" : "pointer",
-          }}
-          type="button"
-          onClick={stepAutoTestOnce}
-          disabled={diceRolling || autoTestRunning}
-          title="Run one automated testing step."
-        >
-          Step Test
-        </button>
-
-        <button
-          style={{ ...luxuryButton, minWidth: 82 }}
-          type="button"
-          onClick={stopAutoTest}
-          title="Stop Auto Test and save the current auto-test report."
-        >
-          Stop Test
-        </button>
-
-        <button
-          style={{ ...luxuryButton, minWidth: 122 }}
-          type="button"
-          onClick={() => void copyAutoTestReport()}
-          title="Copy the saved Auto Test report so you can paste it into an email, text, or ChatGPT."
-        >
-          Copy Report
-        </button>
-
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 118,
-            opacity: autoTestRunning ? 0.45 : 1,
-            cursor: autoTestRunning ? "not-allowed" : "pointer",
-          }}
-          type="button"
-          onClick={clearAutoTestReport}
-          disabled={autoTestRunning}
-          title="Clear the saved Auto Test report."
-        >
-          Clear Report
-        </button>
-          </>
-        )}
-      </div>
-
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(7px, 0.8vw, 10px)",
-          fontSize: "clamp(13px, 1.35vw, 15px)",
-          fontWeight: 700,
-        }}
-      >
-        {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : message}
-        {winner && finalResult && (
-          <div
-            style={{
-              margin: "9px auto 0",
-              width: "fit-content",
-              maxWidth: "min(92vw, 760px)",
-              background: "linear-gradient(145deg, #fff7c7, #b87816 58%, #5a2c05)",
-              color: "#1a0900",
-              border: "3px solid #ffe28a",
-              borderRadius: 18,
-              padding: "9px 16px",
-              fontSize: "clamp(14px, 1.45vw, 18px)",
-              fontWeight: 900,
-              boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
-            }}
-          >
-            <div>Final: {finalResult.winner === "White" ? cleanWhitePlayerName : cleanBlackPlayerName} defeated {finalResult.loser === "White" ? cleanWhitePlayerName : cleanBlackPlayerName} in {mode} mode.</div>
-            <div style={{ fontSize: "0.9em", marginTop: 3 }}>
-              {finalResult.winner} off: {finalResult.winnerOff} • {finalResult.loser} off: {finalResult.loserOff} • {finalResult.loser} pips remaining: {finalResult.loserPips}
-            </div>
-          </div>
-        )}
-        {turnGuidance && !winner && (
-          <div
-            style={{
-              margin: "7px auto 0",
-              width: "fit-content",
-              maxWidth: "min(92vw, 720px)",
-              background: "linear-gradient(145deg, #fff3b0, #c57b16)",
-              color: "#1a0900",
-              border: "2px solid #ffe28a",
-              borderRadius: 999,
-              padding: "6px 14px",
-              fontSize: "clamp(14px, 1.45vw, 18px)",
-              fontWeight: 900,
-              boxShadow: "0 8px 18px rgba(0,0,0,0.38)",
-            }}
-          >
-            {turnGuidance}
-          </div>
-        )}
-        {canChooseDoctrine && (
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              gap: 6,
-              justifyContent: "center",
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              style={{
-                ...luxuryButton,
-                background: "linear-gradient(145deg, #ffdfbf, #8f0000)",
-                color: "white",
-                fontSize: 14,
-                padding: "8px 16px",
-                minWidth: 140,
-              }}
-              onClick={() => chooseMode("WAR")}
-            >
-              WAR
-            </button>
-            <button
-              style={{
-                ...luxuryButton,
-                background: "linear-gradient(145deg, #d7f1ff, #004f9e)",
-                color: "white",
-                fontSize: 14,
-                padding: "8px 16px",
-                minWidth: 140,
-              }}
-              onClick={() => chooseMode("PEACE")}
-            >
-              PEACE
-            </button>
-          </div>
-        )}
-      </div>
-
-      {false && showTestingPanel && (autoTestLog.length > 0 || autoTestError || autoTestRunning || autoTestSummary.completedGames > 0) && (
-        <div
-          style={{
-            margin: "10px auto 0",
-            width: "min(94vw, 940px)",
-            background: autoTestError
-              ? "linear-gradient(145deg, rgba(90,0,0,0.92), rgba(20,0,0,0.96))"
-              : "linear-gradient(145deg, rgba(35,20,8,0.94), rgba(8,3,1,0.96))",
-            border: autoTestError ? "3px solid #ffb08e" : "2px solid rgba(255,213,128,0.55)",
-            borderRadius: 18,
-            padding: "10px 14px",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.55)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-              color: autoTestError ? "#ffe8d4" : "#ffe6ad",
-              fontWeight: 900,
-              fontSize: "clamp(14px, 1.4vw, 18px)",
-              marginBottom: 6,
-            }}
-          >
-            <span>Computer vs Computer Auto Test: {autoTestStatus}</span>
-            <span>
-              Speed: {AUTO_TEST_SPEED_LABELS[autoTestSpeed]} • Strategy: {AUTO_TEST_STRATEGY_LABELS[autoTestStrategy]} • Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames} • Rolls: {autoTestSummary.totalDiceRolls} • Internal cycles: {autoTestSummary.totalSteps}
-            </span>
-          </div>
-          {autoTestError && (
-            <div
-              style={{
-                color: "#fff4d6",
-                background: "rgba(255,0,0,0.18)",
-                border: "1px solid rgba(255,210,160,0.5)",
-                borderRadius: 12,
-                padding: "7px 10px",
-                marginBottom: 7,
-                fontWeight: 900,
-              }}
-            >
-              AUTO TEST STOPPED — {autoTestError}
-            </div>
-          )}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))",
-              gap: 6,
-              marginBottom: 8,
-              color: "#fff1c9",
-              fontSize: "clamp(12px, 1.1vw, 14px)",
-              fontWeight: 800,
-            }}
-          >
-            <div>White wins: {autoTestSummary.whiteWins} ({formatPercent(autoTestSummary.whiteWins, autoTestSummary.completedGames)})</div>
-            <div>Black wins: {autoTestSummary.blackWins} ({formatPercent(autoTestSummary.blackWins, autoTestSummary.completedGames)})</div>
-            <div>Opening winner wins: {autoTestSummary.openingWinnerWins} ({formatPercent(autoTestSummary.openingWinnerWins, autoTestSummary.openingWinnerWins + autoTestSummary.openingWinnerLosses)})</div>
-            <div>WAR chooser wins: {autoTestSummary.warStartWins}/{autoTestSummary.warStartGames}</div>
-            <div>PEACE chooser wins: {autoTestSummary.peaceStartWins}/{autoTestSummary.peaceStartGames}</div>
-            <div>Average game: {autoTestSummary.averageDiceRolls} dice rolls/turns</div>
-            <div>Shortest game: {autoTestSummary.shortestGameRolls} dice rolls/turns</div>
-            <div>Longest game: {autoTestSummary.longestGameRolls} dice rolls/turns</div>
-            <div>Playable rolls: {autoTestSummary.playableRolls}</div>
-            <div>Unplayable rolls / auto-passes: {autoTestSummary.unplayableRolls}</div>
-            <div>No-entry rolls from bar: {autoTestSummary.noEntryRolls}</div>
-            <div>Doubles: {autoTestSummary.doublesRolled} total / {autoTestSummary.playableDoubles} playable / {autoTestSummary.blockedDoubles} blocked</div>
-            <div>Checker moves: {autoTestSummary.checkerMoves} • Hits: {autoTestSummary.hits} • Bear-offs: {autoTestSummary.bearOffs}</div>
-            <div>Internal cycles: avg {autoTestSummary.averageGameSteps}, longest {autoTestSummary.longestGameSteps}</div>
-            <div>Greatest comeback: {autoTestSummary.greatestComebackPips} pips</div>
-            <div>Avg final margin: {autoTestSummary.averageFinalPipMargin} pips</div>
-            <div>Median final margin: {autoTestSummary.medianFinalPipMargin} pips</div>
-            <div>Largest final margin: {autoTestSummary.largestFinalPipMargin} pips</div>
-            <div>Avg bear-off margin: {autoTestSummary.averageCheckerMargin} checkers</div>
-            <div>Avg loser off: {autoTestSummary.averageLoserCheckersOff} • Shutouts: {autoTestSummary.shutoutGames}</div>
-            <div>Loser off buckets: 1-5 {autoTestSummary.loserOff1To5} • 6-10 {autoTestSummary.loserOff6To10} • 11-14 {autoTestSummary.loserOff11To14}</div>
-            <div>Highest pip count: {autoTestSummary.highestPipCount}</div>
-            <div>Largest pip gap: {autoTestSummary.largestPipGap}</div>
-            <div>Extreme games: margin 100+ {autoTestSummary.finalMarginsOver100} • pip count 300+ {autoTestSummary.highestPipCountsOver300} • gap 200+ {autoTestSummary.largestPipGapsOver200}</div>
-            <div>Enemy Control triggers: {autoTestSummary.enemyControlTriggers}</div>
-            <div>Enemy Control moves: {autoTestSummary.enemyControlMoves}</div>
-            <div>EC beneficiary wins: {autoTestSummary.enemyControlBeneficiaryWins} ({autoTestSummary.enemyControlBeneficiaryWinRate})</div>
-            <div>EC while trailing 30+: {autoTestSummary.enemyControlWhileTrailing30}</div>
-          </div>
-          <div
-            style={{
-              color: "#ffe7b7",
-              fontSize: "clamp(12px, 1.1vw, 14px)",
-              fontWeight: 850,
-              marginBottom: 8,
-              background: "rgba(255,230,173,0.08)",
-              border: "1px solid rgba(255,226,138,0.22)",
-              borderRadius: 12,
-              padding: "6px 9px",
-            }}
-          >
-            Saved report: {autoTestSummary.stopReason} • Avg final margin {autoTestSummary.averageFinalPipMargin} pips • Median {autoTestSummary.medianFinalPipMargin} pips • {autoTestSummary.greatestComebackSummary}
-          </div>
-
-          <div
-            style={{
-              maxHeight: 135,
-              overflowY: "auto",
-              fontSize: "clamp(12px, 1.15vw, 14px)",
-              lineHeight: 1.35,
-              color: "#ffe7b7",
-              textAlign: "left",
-            }}
-          >
-            {autoTestLog.length === 0 ? (
-              <div>Start Auto Test to let the computer play both sides and look for rule-engine errors.</div>
-            ) : (
-              autoTestLog.slice(0, 12).map((entry, index) => (
-                <div key={`${entry}-${index}`}>{entry}</div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {showRecords && (
-        <div
-          style={{
-            width: shellWidth,
-            margin: "0 auto clamp(10px, 1vw, 14px)",
-            background: "linear-gradient(145deg, rgba(255,242,188,0.14), rgba(32,14,4,0.94))",
-            border: "3px solid rgba(226,171,87,0.72)",
-            borderRadius: 20,
-            padding: "10px 12px",
-            boxShadow: "0 12px 26px rgba(0,0,0,0.48)",
-            color: "#ffeab0",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-              marginBottom: 8,
-            }}
-          >
-            <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900 }}>Player Records</div>
-            <div style={{ fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.9 }}>
-              Records are saved automatically on this browser when a game ends.
-            </div>
-          </div>
-
-          {leaderboard.length === 0 ? (
-            <div style={{ fontWeight: 800 }}>No completed games yet.</div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
-              {leaderboard.slice(0, 8).map((player) => (
-                <div
-                  key={playerRecordKey(player.name)}
-                  style={{
-                    border: "1px solid rgba(255,226,138,0.38)",
-                    borderRadius: 14,
-                    padding: "8px 10px",
-                    background: "rgba(0,0,0,0.22)",
-                  }}
-                >
-                  <div style={{ fontSize: "clamp(14px, 1.35vw, 18px)", fontWeight: 900, color: "#fff4c7" }}>{player.name}</div>
-                  <div style={{ fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, marginTop: 3 }}>
-                    Record: {player.wins}-{player.losses} • Win rate: {formatWinRate(player.wins, player.games)}
-                  </div>
-                  <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.92 }}>
-                    Avg winning margin: {averagePips(player.totalLoserPipsWhenWon, player.wins)} pips • WAR {player.war.wins}-{player.war.losses} • PEACE {player.peace.wins}-{player.peace.losses}
-                  </div>
-                  {Object.values(player.headToHead).length > 0 && (
-                    <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.9 }}>
-                      Vs. {Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].opponentName}: {Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].wins}-{Object.values(player.headToHead).sort((a, b) => b.games - a.games)[0].losses}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {recordBook.games.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.95 }}>
-              <strong>Recent:</strong>{" "}
-              {recordBook.games.slice(0, 3).map((game) => `${game.winnerPlayer} beat ${game.loserPlayer} (${game.mode}, ${game.reason === "RESIGNATION" ? "resignation" : "bear-off"}, ${game.loserPips} pips left)`).join("  •  ")}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(6px, 0.7vw, 10px)",
+          width: "100%",
+          height: "100%",
+          minHeight: 0,
+          margin: 0,
           background: "linear-gradient(145deg, #5a3218, #2a1207 58%, #120603)",
-          padding: 6,
-          borderRadius: 22,
-          border: "5px solid #2a1408",
+          padding: "clamp(4px, 0.55vw, 6px)",
+          borderRadius: 18,
+          border: "clamp(4px, 0.65vw, 7px) solid #2a1408",
           boxShadow: "inset 0 0 0 2px rgba(231,160,72,0.24), inset 0 0 38px rgba(0,0,0,0.65), 0 24px 52px rgba(0,0,0,0.72)",
         }}
       >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 40px minmax(0, 1fr) 56px",
-            gap: 6,
+            gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
+            gap: 2,
           }}
         >
           <div
@@ -5112,7 +4445,7 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "7px 5px 0",
+              padding: "4px 1px 0",
             }}
           >
             <PointQuadrant points={topLeftRow} isTop={true} />
@@ -5137,8 +4470,8 @@ export default function App() {
         <div
           aria-hidden="true"
           style={{
-            height: 12,
-            margin: "5px 0",
+            height: "clamp(14px, 1.8dvh, 18px)",
+            margin: "3px 0",
             borderRadius: 10,
             background: "linear-gradient(90deg, rgba(0,0,0,0.86), rgba(26,38,20,0.95), rgba(0,0,0,0.86))",
             border: "1px solid rgba(255,210,130,0.12)",
@@ -5149,8 +4482,8 @@ export default function App() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 40px minmax(0, 1fr) 56px",
-            gap: 6,
+            gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
+            gap: 2,
           }}
         >
           <div
@@ -5158,7 +4491,7 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 5px 7px"
+              padding: "0 1px 4px"
             }}
           >
             <PointQuadrant points={bottomLeftRow} isTop={false} />
@@ -5171,7 +4504,7 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 5px 7px"
+              padding: "0 1px 4px"
             }}
           >
             <PointQuadrant points={bottomRightRow} isTop={false} />
@@ -5180,6 +4513,359 @@ export default function App() {
           <SideTray player="Black" />
         </div>
       </div>
+
+
+        </div>
+
+        <aside
+          style={{
+            minWidth: 0,
+            minHeight: 0,
+            display: "grid",
+            gridTemplateRows: "auto auto auto auto auto 1fr auto",
+            gap: "clamp(5px, 0.65vw, 8px)",
+            padding: "clamp(7px, 0.85vw, 10px)",
+            borderRadius: 17,
+            border: "2px solid rgba(226,171,87,0.56)",
+            background: "linear-gradient(180deg, rgba(80,42,15,0.96), rgba(18,7,2,0.98))",
+            boxShadow: "inset 0 1px 0 rgba(255,230,170,0.14), 0 10px 24px rgba(0,0,0,0.52)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              background: doctrineBannerBackground,
+              borderRadius: 14,
+              border: "2px solid #9a6328",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: "clamp(36px, 5.4dvh, 48px)",
+              fontSize: enemyControl
+                ? "clamp(12px, 1.35vw, 16px)"
+                : neutralModeState
+                ? "clamp(16px, 2vw, 24px)"
+                : "clamp(26px, 3.2vw, 42px)",
+              fontWeight: 900,
+              color: enemyControl || neutralModeState ? "#1b0b00" : "white",
+              textAlign: "center",
+              padding: 3,
+              boxShadow: doctrineBannerShadow,
+              animation: doctrineBannerAnimation,
+              textShadow: neutralModeState ? "0 1px 2px rgba(255,255,255,0.28)" : "0 3px 8px rgba(0,0,0,0.5)",
+            }}
+          >
+            {doctrineBannerText}
+          </div>
+
+          <div
+            style={{
+              background: activeTurnGlowBackground,
+              border: activeTurnGlowBorder,
+              borderRadius: 14,
+              padding: 4,
+              textAlign: "center",
+              minHeight: "clamp(54px, 8.5dvh, 70px)",
+              color: activeTurnGlowColor,
+              boxShadow: enemyControl
+                ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
+                : activeTurnIsWhite
+                ? "0 0 20px rgba(255,248,190,0.72), inset 0 1px 0 rgba(255,255,255,0.55)"
+                : "0 0 20px rgba(190,105,30,0.72), inset 0 1px 0 rgba(255,210,140,0.22)",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 1, fontSize: 9 }}>DICE</div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                animation: diceRolling ? "diceShake 0.6s infinite" : "none",
+                minHeight: 45,
+                alignItems: "center",
+              }}
+            >
+              {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index)) : "-"}
+            </div>
+          </div>
+
+          <CombinedPipPanel />
+          <GameFlowPanel />
+
+          <div
+            style={{
+              background: activeTurnGlowBackground,
+              border: activeTurnGlowBorder,
+              borderRadius: 14,
+              padding: "5px 6px",
+              textAlign: "center",
+              color: activeTurnGlowColor,
+              minHeight: 50,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: 2,
+              boxShadow: enemyControl
+                ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
+                : activeTurnIsWhite
+                ? "0 0 18px rgba(255,248,190,0.62), inset 0 1px 0 rgba(255,255,255,0.5)"
+                : "0 0 18px rgba(190,105,30,0.68), inset 0 1px 0 rgba(255,210,140,0.22)",
+            }}
+          >
+            <div style={{ fontSize: "clamp(8px, 0.78vw, 10px)", fontWeight: 900, letterSpacing: 1.1, opacity: 0.82 }}>TURN / CONTROL</div>
+            <div style={{ fontSize: "clamp(14px, 1.35vw, 19px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer.toUpperCase()}</div>
+            <div style={{ fontSize: "clamp(11px, 1vw, 14px)", fontWeight: 900, lineHeight: 1.1 }}>
+              {enemyControl || controller !== currentPlayer ? `Enemy Control: ${controller}` : `Controller: ${controller}`}
+            </div>
+          </div>
+
+          <div
+            style={{
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: "clamp(5px, 0.65vw, 8px)",
+              justifyContent: "flex-start",
+            }}
+          >
+            {!playersReady && gamePhase === "OPENING_ROLL" && (
+              <div style={{ color: "#fff2bc", fontSize: 12, fontWeight: 900, textAlign: "center" }}>
+                Enter two different player names to begin.
+              </div>
+            )}
+
+            <button
+              style={{
+                ...luxuryButton,
+                width: "100%",
+                opacity: canRollOpening ? 1 : 0.45,
+                cursor: canRollOpening ? "pointer" : "not-allowed",
+              }}
+              disabled={!canRollOpening}
+              onClick={rollOpening}
+            >
+              Roll Opening Dice
+            </button>
+
+            {canChooseDoctrine && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                <button
+                  style={{
+                    ...luxuryButton,
+                    background: "linear-gradient(145deg, #ffdbb0, #a00000)",
+                    color: "white",
+                    minWidth: 0,
+                    padding: "8px 6px",
+                  }}
+                  onClick={() => chooseMode("WAR")}
+                >
+                  WAR
+                </button>
+                <button
+                  style={{
+                    ...luxuryButton,
+                    background: "linear-gradient(145deg, #d9efff, #005aa8)",
+                    color: "white",
+                    minWidth: 0,
+                    padding: "8px 6px",
+                  }}
+                  onClick={() => chooseMode("PEACE")}
+                >
+                  PEACE
+                </button>
+              </div>
+            )}
+
+            <button
+              style={{
+                ...luxuryButton,
+                width: "100%",
+                minHeight: 42,
+                fontSize: "clamp(16px, 1.55vw, 21px)",
+                letterSpacing: 1.2,
+                background: canSubmitTurn
+                  ? "linear-gradient(145deg, #fff5c8, #d89024 55%, #653000)"
+                  : "linear-gradient(145deg, #201812, #050302)",
+                color: canSubmitTurn ? "#1a0900" : "#f3d18b",
+                border: canSubmitTurn ? "3px solid #ffe08a" : "2px solid #9a6328",
+                boxShadow: canSubmitTurn
+                  ? "0 0 18px rgba(255,210,90,0.58), inset 0 1px 0 rgba(255,255,230,0.5)"
+                  : "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
+                opacity: canSubmitTurn ? 1 : 0.45,
+                cursor: canSubmitTurn ? "pointer" : "not-allowed",
+                transform: canSubmitTurn ? "scale(1.01)" : "scale(1)",
+              }}
+              type="button"
+              disabled={!canSubmitTurn}
+              aria-disabled={!canSubmitTurn}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (canSubmitTurn) submitTurn(); else setMessage(gamePhase === "OPENING_ROLL" ? "Roll opening dice first." : "End Turn is not available yet."); }}
+              title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
+            >
+              END TURN
+            </button>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <button
+                style={{
+                  ...luxuryButton,
+                  minWidth: 0,
+                  padding: "7px 9px",
+                  fontSize: 10,
+                  opacity: history.length > 0 ? 1 : 0.58,
+                }}
+                onClick={undoMove}
+              >
+                Undo
+              </button>
+              {gamePhase === "GAME_OVER" ? (
+                <button
+                  style={{
+                    ...luxuryButton,
+                    background: "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)",
+                    color: "#1a0900",
+                    minWidth: 0,
+                    padding: "7px 9px",
+                    fontSize: 10,
+                  }}
+                  type="button"
+                  onClick={resetNewGame}
+                  title="Start a new game from the opening roll."
+                >
+                  New Game
+                </button>
+              ) : (
+                <button
+                  style={{
+                    ...luxuryButton,
+                    minWidth: 0,
+                    padding: "7px 9px",
+                    fontSize: 10,
+                    background: showRecords
+                      ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
+                      : luxuryButton.background,
+                    color: showRecords ? "#1a0900" : luxuryButton.color,
+                  }}
+                  type="button"
+                  onClick={() => setShowRecords((visible) => !visible)}
+                  title="Show player records and recent game history"
+                >
+                  Records
+                </button>
+              )}
+            </div>
+
+            <button
+              style={{
+                ...luxuryButton,
+                width: "100%",
+                background: soundEnabled
+                  ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
+                  : luxuryButton.background,
+                color: soundEnabled ? "#1a0900" : luxuryButton.color,
+              }}
+              type="button"
+              onClick={() => {
+                setSoundEnabled((enabled) => {
+                  const next = !enabled;
+                  if (next) playSoundTest();
+                  return next;
+                });
+              }}
+              title="Turn game sounds on or off. Turning sound on plays a quick test tone."
+            >
+              Sound {soundEnabled ? "On" : "Off"}
+            </button>
+
+            <div
+              style={{
+                color: "#ffe6ad",
+                background: "rgba(0,0,0,0.18)",
+                border: "1px solid rgba(255,213,128,0.28)",
+                borderRadius: 12,
+                padding: "6px 8px",
+                fontSize: "clamp(11px, 1vw, 13px)",
+                fontWeight: 800,
+                lineHeight: 1.25,
+                textAlign: "center",
+              }}
+            >
+              {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : message}
+              {turnGuidance && !winner && (
+                <div style={{ marginTop: 4, color: "#fff2bc", fontWeight: 900 }}>{turnGuidance}</div>
+              )}
+            </div>
+          </div>
+
+          <button
+            style={{
+              ...luxuryButton,
+              width: "100%",
+              padding: "7px 10px",
+              fontSize: 10,
+              background: confirmResign
+                ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
+                : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
+              color: confirmResign ? "#fff3d0" : "#f3d18b",
+              border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
+              opacity: canResign ? 1 : 0.45,
+              cursor: canResign ? "pointer" : "not-allowed",
+            }}
+            disabled={!canResign}
+            onClick={resignGame}
+            title={confirmResign ? "Confirm resignation" : "Resign game"}
+          >
+            {confirmResign ? "Confirm Resign" : "Resign"}
+          </button>
+        </aside>
+      </div>
+
+      {showRecords && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "clamp(8px, 1vw, 14px)",
+            transform: "translateX(-50%)",
+            zIndex: 8500,
+            width: "min(94vw, 980px)",
+            maxHeight: "42dvh",
+            overflow: "auto",
+            background: "linear-gradient(145deg, rgba(255,242,188,0.16), rgba(32,14,4,0.98))",
+            border: "3px solid rgba(226,171,87,0.72)",
+            borderRadius: 20,
+            padding: "10px 12px",
+            boxShadow: "0 18px 38px rgba(0,0,0,0.68)",
+            color: "#ffeab0",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900 }}>Player Records</div>
+            <button type="button" style={{ ...luxuryButton, padding: "5px 10px" }} onClick={() => setShowRecords(false)}>Close</button>
+          </div>
+          {leaderboard.length === 0 ? (
+            <div style={{ fontWeight: 800 }}>No completed games yet.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
+              {leaderboard.slice(0, 8).map((player) => (
+                <div key={playerRecordKey(player.name)} style={{ border: "1px solid rgba(255,226,138,0.38)", borderRadius: 14, padding: "8px 10px", background: "rgba(0,0,0,0.22)" }}>
+                  <div style={{ fontSize: "clamp(14px, 1.35vw, 18px)", fontWeight: 900, color: "#fff4c7" }}>{player.name}</div>
+                  <div style={{ fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, marginTop: 3 }}>
+                    Record: {player.wins}-{player.losses} • Win rate: {formatWinRate(player.wins, player.games)}
+                  </div>
+                  <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.92 }}>
+                    Avg winning margin: {averagePips(player.totalLoserPipsWhenWon, player.wins)} pips • WAR {player.war.wins}-{player.war.losses} • PEACE {player.peace.wins}-{player.peace.losses}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {recordBook.games.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.95 }}>
+              <strong>Recent:</strong>{" "}
+              {recordBook.games.slice(0, 3).map((game) => `${game.winnerPlayer} beat ${game.loserPlayer} (${game.mode}, ${game.reason === "RESIGNATION" ? "resignation" : "bear-off"}, ${game.loserPips} pips left)`).join("  •  ")}
+            </div>
+          )}
+        </div>
+      )}
 
       {PUBLIC_SHOW_TESTING_TOOLS && (
       <div
