@@ -4,7 +4,8 @@ type Player = "White" | "Black";
 type Mode = "WAR" | "PEACE";
 type ControlState = "NORMAL" | "ENEMY_CONTROL";
 type GamePhase = "OPENING_ROLL" | "MODE_CHOICE" | "OPENING_TURN" | "NORMAL_TURN" | "GAME_OVER";
-type AutoTestSpeed = "SLOW" | "FAST" | "VERY_FAST" | "TURBO";
+type AutoTestSpeed = "SLOW" | "FAST" | "VERY_FAST" | "SAFE_TURBO";
+type AutoTestStrategy = "RANDOM_LEGAL" | "BALANCED" | "CONTROLLED_COMEBACK";
 
 type Point = {
   owner: Player | null;
@@ -163,9 +164,35 @@ type AutoTestGameResult = {
   winner: Player | null;
   openingWinner: Player | null;
   startingMode: Mode | null;
-  steps: number;
+  steps: number; // Internal simulation cycles only. Not a player-facing game-length measure.
+  diceRolls?: number;
+  playableRolls?: number;
+  unplayableRolls?: number;
+  noEntryRolls?: number;
+  doublesRolled?: number;
+  playableDoubles?: number;
+  blockedDoubles?: number;
+  checkerMoves?: number;
+  hits?: number;
+  bearOffs?: number;
   noMovePasses: number;
   winnerGreatestDeficitPips: number;
+  loserPipsRemaining?: number;
+  loserCheckersOff?: number;
+  finalPipMargin?: number;
+  checkerMargin?: number;
+  highestWhitePips?: number;
+  highestBlackPips?: number;
+  highestPipCount?: number;
+  largestPipGap?: number;
+  extremePipEvent?: boolean;
+  enemyControlTriggers?: number;
+  enemyControlMoves?: number;
+  whiteGainedEnemyControl?: number;
+  blackGainedEnemyControl?: number;
+  enemyControlWhileTrailing30?: number;
+  enemyControlCausedHits?: number;
+  enemyControlBeneficiaryWon?: boolean;
 };
 
 type AutoTestReport = {
@@ -174,6 +201,8 @@ type AutoTestReport = {
   updatedAt: string;
   targetGames: number;
   stopReason: string;
+  speedLabel?: string;
+  strategyLabel?: string;
   games: AutoTestGameResult[];
 };
 
@@ -186,7 +215,44 @@ type AutoTestSummary = {
   shortestGameSteps: number;
   longestGameSteps: number;
   averageGameSteps: number;
+  totalDiceRolls: number;
+  averageDiceRolls: number;
+  shortestGameRolls: number;
+  longestGameRolls: number;
+  playableRolls: number;
+  unplayableRolls: number;
+  noEntryRolls: number;
+  doublesRolled: number;
+  playableDoubles: number;
+  blockedDoubles: number;
+  checkerMoves: number;
+  hits: number;
+  bearOffs: number;
   noMovePasses: number;
+  averageFinalPipMargin: number;
+  medianFinalPipMargin: number;
+  smallestFinalPipMargin: number;
+  largestFinalPipMargin: number;
+  averageCheckerMargin: number;
+  medianCheckerMargin: number;
+  smallestCheckerMargin: number;
+  largestCheckerMargin: number;
+  averageLoserCheckersOff: number;
+  medianLoserCheckersOff: number;
+  shutoutGames: number;
+  loserOff1To5: number;
+  loserOff6To10: number;
+  loserOff11To14: number;
+  highestPipCount: number;
+  largestPipGap: number;
+  finalMarginsOver50: number;
+  finalMarginsOver100: number;
+  highestPipCountsOver200: number;
+  highestPipCountsOver300: number;
+  largestPipGapsOver100: number;
+  largestPipGapsOver150: number;
+  largestPipGapsOver200: number;
+  largestPipGapsOver300: number;
   openingWinnerWins: number;
   openingWinnerLosses: number;
   warStartGames: number;
@@ -195,6 +261,14 @@ type AutoTestSummary = {
   peaceStartWins: number;
   greatestComebackPips: number;
   greatestComebackSummary: string;
+  enemyControlTriggers: number;
+  enemyControlMoves: number;
+  whiteGainedEnemyControl: number;
+  blackGainedEnemyControl: number;
+  enemyControlWhileTrailing30: number;
+  enemyControlCausedHits: number;
+  enemyControlBeneficiaryWins: number;
+  enemyControlBeneficiaryWinRate: string;
   stopReason: string;
 };
 
@@ -207,28 +281,36 @@ const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
   SLOW: "Slow",
   FAST: "Fast",
   VERY_FAST: "Very Fast",
-  TURBO: "Turbo",
+  SAFE_TURBO: "Safe Batch",
 };
+
+const AUTO_TEST_STRATEGY_LABELS: Record<AutoTestStrategy, string> = {
+  RANDOM_LEGAL: "Random Legal",
+  BALANCED: "Balanced",
+  CONTROLLED_COMEBACK: "Controlled Comeback",
+};
+
+const AUTO_TEST_BATCH_CHECKPOINT_GAMES = 10;
 
 const AUTO_TEST_DELAY_MS: Record<AutoTestSpeed, number> = {
   SLOW: 850,
   FAST: 220,
   VERY_FAST: 55,
-  TURBO: 1,
+  SAFE_TURBO: 8,
 };
 
 const AUTO_TEST_NO_MOVE_DELAY_MS: Record<AutoTestSpeed, number> = {
   SLOW: 2300,
   FAST: 450,
   VERY_FAST: 90,
-  TURBO: 1,
+  SAFE_TURBO: 18,
 };
 
 const AUTO_TEST_DICE_DELAY_MS: Record<AutoTestSpeed, number> = {
   SLOW: 650,
   FAST: 90,
   VERY_FAST: 18,
-  TURBO: 0,
+  SAFE_TURBO: 0,
 };
 
 function createEmptyAutoTestReport(targetGames = 1, stopReason = "Not started."): AutoTestReport {
@@ -265,10 +347,34 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
   const whiteWins = games.filter((game) => game.winner === "White").length;
   const blackWins = games.filter((game) => game.winner === "Black").length;
   const totalSteps = games.reduce((total, game) => total + game.steps, 0);
-  const noMovePasses = games.reduce((total, game) => total + game.noMovePasses, 0);
+  const totalDiceRolls = games.reduce((total, game) => total + (game.diceRolls ?? 0), 0);
+  const playableRolls = games.reduce((total, game) => total + (game.playableRolls ?? 0), 0);
+  const unplayableRolls = games.reduce((total, game) => total + (game.unplayableRolls ?? game.noMovePasses ?? 0), 0);
+  const noEntryRolls = games.reduce((total, game) => total + (game.noEntryRolls ?? 0), 0);
+  const doublesRolled = games.reduce((total, game) => total + (game.doublesRolled ?? 0), 0);
+  const playableDoubles = games.reduce((total, game) => total + (game.playableDoubles ?? 0), 0);
+  const blockedDoubles = games.reduce((total, game) => total + (game.blockedDoubles ?? 0), 0);
+  const checkerMoves = games.reduce((total, game) => total + (game.checkerMoves ?? 0), 0);
+  const hits = games.reduce((total, game) => total + (game.hits ?? 0), 0);
+  const bearOffs = games.reduce((total, game) => total + (game.bearOffs ?? 0), 0);
+  const finalPipMargins = games
+    .map((game) => game.finalPipMargin)
+    .filter((value): value is number => typeof value === "number");
+  const checkerMargins = games
+    .map((game) => game.checkerMargin)
+    .filter((value): value is number => typeof value === "number");
+  const loserOffValues = games
+    .map((game) => game.loserCheckersOff)
+    .filter((value): value is number => typeof value === "number");
+  const highestPipCount = games.reduce((highest, game) => Math.max(highest, game.highestPipCount ?? 0), 0);
+  const largestPipGap = games.reduce((highest, game) => Math.max(highest, game.largestPipGap ?? 0), 0);
+  const noMovePasses = unplayableRolls;
   const shortestGameSteps = completedGames === 0 ? 0 : Math.min(...games.map((game) => game.steps));
   const longestGameSteps = completedGames === 0 ? 0 : Math.max(...games.map((game) => game.steps));
   const averageGameSteps = completedGames === 0 ? 0 : Math.round(totalSteps / completedGames);
+  const shortestGameRolls = completedGames === 0 ? 0 : Math.min(...games.map((game) => game.diceRolls ?? 0));
+  const longestGameRolls = completedGames === 0 ? 0 : Math.max(...games.map((game) => game.diceRolls ?? 0));
+  const averageDiceRolls = completedGames === 0 ? 0 : Math.round(totalDiceRolls / completedGames);
   const openingWinnerWins = games.filter((game) => game.openingWinner && game.winner === game.openingWinner).length;
   const openingWinnerLosses = games.filter((game) => game.openingWinner && game.winner && game.winner !== game.openingWinner).length;
   const warStartGames = games.filter((game) => game.startingMode === "WAR").length;
@@ -283,6 +389,13 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
   const greatestComebackSummary = greatestComebackGame && greatestComebackPips > 0
     ? `Game ${greatestComebackGame.gameNumber}: ${greatestComebackGame.winner ?? "Unknown"} won after trailing by ${greatestComebackPips} pips.`
     : "No comeback deficit recorded yet.";
+  const enemyControlTriggers = games.reduce((total, game) => total + (game.enemyControlTriggers ?? 0), 0);
+  const enemyControlMoves = games.reduce((total, game) => total + (game.enemyControlMoves ?? 0), 0);
+  const whiteGainedEnemyControl = games.reduce((total, game) => total + (game.whiteGainedEnemyControl ?? 0), 0);
+  const blackGainedEnemyControl = games.reduce((total, game) => total + (game.blackGainedEnemyControl ?? 0), 0);
+  const enemyControlWhileTrailing30 = games.reduce((total, game) => total + (game.enemyControlWhileTrailing30 ?? 0), 0);
+  const enemyControlCausedHits = games.reduce((total, game) => total + (game.enemyControlCausedHits ?? 0), 0);
+  const enemyControlBeneficiaryWins = games.filter((game) => game.enemyControlBeneficiaryWon).length;
 
   return {
     targetGames: report.targetGames,
@@ -293,7 +406,44 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
     shortestGameSteps,
     longestGameSteps,
     averageGameSteps,
+    totalDiceRolls,
+    averageDiceRolls,
+    shortestGameRolls,
+    longestGameRolls,
+    playableRolls,
+    unplayableRolls,
+    noEntryRolls,
+    doublesRolled,
+    playableDoubles,
+    blockedDoubles,
+    checkerMoves,
+    hits,
+    bearOffs,
     noMovePasses,
+    averageFinalPipMargin: averageNumber(finalPipMargins),
+    medianFinalPipMargin: medianNumber(finalPipMargins),
+    smallestFinalPipMargin: finalPipMargins.length === 0 ? 0 : Math.min(...finalPipMargins),
+    largestFinalPipMargin: finalPipMargins.length === 0 ? 0 : Math.max(...finalPipMargins),
+    averageCheckerMargin: averageNumber(checkerMargins),
+    medianCheckerMargin: medianNumber(checkerMargins),
+    smallestCheckerMargin: checkerMargins.length === 0 ? 0 : Math.min(...checkerMargins),
+    largestCheckerMargin: checkerMargins.length === 0 ? 0 : Math.max(...checkerMargins),
+    averageLoserCheckersOff: averageNumber(loserOffValues),
+    medianLoserCheckersOff: medianNumber(loserOffValues),
+    shutoutGames: games.filter((game) => game.loserCheckersOff === 0).length,
+    loserOff1To5: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 1 && game.loserCheckersOff <= 5).length,
+    loserOff6To10: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 6 && game.loserCheckersOff <= 10).length,
+    loserOff11To14: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 11 && game.loserCheckersOff <= 14).length,
+    highestPipCount,
+    largestPipGap,
+    finalMarginsOver50: games.filter((game) => (game.finalPipMargin ?? 0) >= 50).length,
+    finalMarginsOver100: games.filter((game) => (game.finalPipMargin ?? 0) >= 100).length,
+    highestPipCountsOver200: games.filter((game) => (game.highestPipCount ?? 0) >= 200).length,
+    highestPipCountsOver300: games.filter((game) => (game.highestPipCount ?? 0) >= 300).length,
+    largestPipGapsOver100: games.filter((game) => (game.largestPipGap ?? 0) >= 100).length,
+    largestPipGapsOver150: games.filter((game) => (game.largestPipGap ?? 0) >= 150).length,
+    largestPipGapsOver200: games.filter((game) => (game.largestPipGap ?? 0) >= 200).length,
+    largestPipGapsOver300: games.filter((game) => (game.largestPipGap ?? 0) >= 300).length,
     openingWinnerWins,
     openingWinnerLosses,
     warStartGames,
@@ -302,12 +452,37 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
     peaceStartWins,
     greatestComebackPips,
     greatestComebackSummary,
+    enemyControlTriggers,
+    enemyControlMoves,
+    whiteGainedEnemyControl,
+    blackGainedEnemyControl,
+    enemyControlWhileTrailing30,
+    enemyControlCausedHits,
+    enemyControlBeneficiaryWins,
+    enemyControlBeneficiaryWinRate: formatPercent(enemyControlBeneficiaryWins, games.filter((game) => (game.enemyControlTriggers ?? 0) > 0).length),
     stopReason: report.stopReason,
   };
 }
 
 function createAutoTestSummary(targetGames = 1): AutoTestSummary {
   return summarizeAutoTestReport(createEmptyAutoTestReport(targetGames));
+}
+
+function averageNumber(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+function medianNumber(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[middle];
+  return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function formatOptionalNumber(value: number | undefined): string {
+  return typeof value === "number" ? String(value) : "n/a";
 }
 
 function formatPercent(numerator: number, denominator: number): string {
@@ -322,6 +497,8 @@ function formatAutoTestReportText(report: AutoTestReport): string {
     `Started: ${new Date(report.startedAt).toLocaleString()}`,
     `Updated: ${new Date(report.updatedAt).toLocaleString()}`,
     `Stop reason: ${report.stopReason}`,
+    `Speed: ${report.speedLabel ?? "Unknown"}`,
+    `Strategy: ${report.strategyLabel ?? "Unknown"}`,
     "",
     `Games completed: ${summary.completedGames}/${summary.targetGames}`,
     `White wins: ${summary.whiteWins}`,
@@ -338,15 +515,62 @@ function formatAutoTestReportText(report: AutoTestReport): string {
     `PEACE-start games: ${summary.peaceStartGames}`,
     `PEACE-start chooser wins: ${summary.peaceStartWins} (${formatPercent(summary.peaceStartWins, summary.peaceStartGames)})`,
     "",
-    `Average game length: ${summary.averageGameSteps} steps`,
-    `Shortest game: ${summary.shortestGameSteps} steps`,
-    `Longest game: ${summary.longestGameSteps} steps`,
-    `Total no-move passes: ${summary.noMovePasses}`,
+    "Game length and dice-roll flow:",
+    `Average game length: ${summary.averageDiceRolls} dice rolls/turns`,
+    `Shortest game: ${summary.shortestGameRolls} dice rolls/turns`,
+    `Longest game: ${summary.longestGameRolls} dice rolls/turns`,
+    `Total dice rolls/turns: ${summary.totalDiceRolls}`,
+    `Playable rolls: ${summary.playableRolls}`,
+    `Unplayable rolls / auto-passes: ${summary.unplayableRolls}`,
+    `No-entry rolls from the bar: ${summary.noEntryRolls}`,
+    `Doubles rolled: ${summary.doublesRolled}`,
+    `Playable doubles: ${summary.playableDoubles}`,
+    `Blocked doubles preserving mode: ${summary.blockedDoubles}`,
+    `Checker moves made: ${summary.checkerMoves}`,
+    `Hits: ${summary.hits}`,
+    `Bear-offs: ${summary.bearOffs}`,
+    `Internal simulation cycles: avg ${summary.averageGameSteps}, shortest ${summary.shortestGameSteps}, longest ${summary.longestGameSteps}`,
     `Greatest comeback: ${summary.greatestComebackSummary}`,
+    "",
+    "Victory margins and volatility:",
+    `Average final pip margin: ${summary.averageFinalPipMargin} pips`,
+    `Median final pip margin: ${summary.medianFinalPipMargin} pips`,
+    `Smallest final pip margin: ${summary.smallestFinalPipMargin} pips`,
+    `Largest final pip margin: ${summary.largestFinalPipMargin} pips`,
+    `Average checker/off margin: ${summary.averageCheckerMargin} checkers`,
+    `Median checker/off margin: ${summary.medianCheckerMargin} checkers`,
+    `Largest checker/off margin: ${summary.largestCheckerMargin} checkers`,
+    `Average loser checkers borne off: ${summary.averageLoserCheckersOff}`,
+    `Median loser checkers borne off: ${summary.medianLoserCheckersOff}`,
+    `Shutout games - loser bore off 0: ${summary.shutoutGames}`,
+    `Loser bore off 1-5: ${summary.loserOff1To5}`,
+    `Loser bore off 6-10: ${summary.loserOff6To10}`,
+    `Loser bore off 11-14: ${summary.loserOff11To14}`,
+    `Final margins 50+ pips: ${summary.finalMarginsOver50}`,
+    `Final margins 100+ pips: ${summary.finalMarginsOver100}`,
+    "",
+    "Extreme pip events:",
+    `Highest pip count reached by any player: ${summary.highestPipCount}`,
+    `Largest pip gap during any game: ${summary.largestPipGap}`,
+    `Games with highest pip count 200+: ${summary.highestPipCountsOver200}`,
+    `Games with highest pip count 300+: ${summary.highestPipCountsOver300}`,
+    `Games with pip gap 100+: ${summary.largestPipGapsOver100}`,
+    `Games with pip gap 150+: ${summary.largestPipGapsOver150}`,
+    `Games with pip gap 200+: ${summary.largestPipGapsOver200}`,
+    `Games with pip gap 300+: ${summary.largestPipGapsOver300}`,
+    "",
+    "Enemy Control / Peace Violation:",
+    `Enemy Control triggers: ${summary.enemyControlTriggers}`,
+    `Enemy Control moves executed: ${summary.enemyControlMoves}`,
+    `White gained Enemy Control: ${summary.whiteGainedEnemyControl}`,
+    `Black gained Enemy Control: ${summary.blackGainedEnemyControl}`,
+    `Enemy Control while beneficiary trailed by 30+ pips: ${summary.enemyControlWhileTrailing30}`,
+    `Enemy Control moves that hit: ${summary.enemyControlCausedHits}`,
+    `Games with Enemy Control where beneficiary won: ${summary.enemyControlBeneficiaryWins} (${summary.enemyControlBeneficiaryWinRate})`,
     "",
     "Recent games:",
     ...report.games.slice(-20).map((game) =>
-      `Game ${game.gameNumber}: winner=${game.winner ?? "Unknown"}, openingWinner=${game.openingWinner ?? "Unknown"}, start=${game.startingMode ?? "Unknown"}, steps=${game.steps}, noMoves=${game.noMovePasses}, comeback=${game.winnerGreatestDeficitPips}`
+      `Game ${game.gameNumber}: winner=${game.winner ?? "Unknown"}, openingWinner=${game.openingWinner ?? "Unknown"}, start=${game.startingMode ?? "Unknown"}, rolls=${game.diceRolls ?? 0}, playable=${game.playableRolls ?? 0}, unplayable=${game.unplayableRolls ?? game.noMovePasses}, noEntry=${game.noEntryRolls ?? 0}, doubles=${game.doublesRolled ?? 0}, blockedDoubles=${game.blockedDoubles ?? 0}, moves=${game.checkerMoves ?? 0}, hits=${game.hits ?? 0}, bearOffs=${game.bearOffs ?? 0}, comeback=${game.winnerGreatestDeficitPips}, finalMargin=${formatOptionalNumber(game.finalPipMargin)}, loserOff=${formatOptionalNumber(game.loserCheckersOff)}, checkerMargin=${formatOptionalNumber(game.checkerMargin)}, highestPip=${formatOptionalNumber(game.highestPipCount)}, largestGap=${formatOptionalNumber(game.largestPipGap)}, enemyControl=${game.enemyControlTriggers ?? 0}, ecMoves=${game.enemyControlMoves ?? 0}`
     ),
   ];
 
@@ -1044,6 +1268,7 @@ export default function App() {
   const [betaError, setBetaError] = useState<string | null>(null);
   const [autoTestRunning, setAutoTestRunning] = useState(false);
   const [autoTestSpeed, setAutoTestSpeed] = useState<AutoTestSpeed>("FAST");
+  const [autoTestStrategy, setAutoTestStrategy] = useState<AutoTestStrategy>("RANDOM_LEGAL");
   const [autoTestLog, setAutoTestLog] = useState<string[]>([]);
   const [autoTestError, setAutoTestError] = useState<string | null>(null);
   const [autoTestReport, setAutoTestReport] = useState<AutoTestReport>(() => loadAutoTestReport());
@@ -1060,9 +1285,38 @@ export default function App() {
   const autoTestLongestGameStepsRef = useRef(0);
   const autoTestNoMovePassesRef = useRef(0);
   const autoTestGameNoMovePassesRef = useRef(0);
+  const autoTestTotalDiceRollsRef = useRef(0);
+  const autoTestGameDiceRollsRef = useRef(0);
+  const autoTestPlayableRollsRef = useRef(0);
+  const autoTestGamePlayableRollsRef = useRef(0);
+  const autoTestUnplayableRollsRef = useRef(0);
+  const autoTestGameUnplayableRollsRef = useRef(0);
+  const autoTestNoEntryRollsRef = useRef(0);
+  const autoTestGameNoEntryRollsRef = useRef(0);
+  const autoTestDoublesRolledRef = useRef(0);
+  const autoTestGameDoublesRolledRef = useRef(0);
+  const autoTestPlayableDoublesRef = useRef(0);
+  const autoTestGamePlayableDoublesRef = useRef(0);
+  const autoTestBlockedDoublesRef = useRef(0);
+  const autoTestGameBlockedDoublesRef = useRef(0);
+  const autoTestCheckerMovesRef = useRef(0);
+  const autoTestGameCheckerMovesRef = useRef(0);
+  const autoTestHitsRef = useRef(0);
+  const autoTestGameHitsRef = useRef(0);
+  const autoTestBearOffsRef = useRef(0);
+  const autoTestGameBearOffsRef = useRef(0);
   const autoTestCurrentStartModeRef = useRef<Mode | null>(null);
   const autoTestCurrentOpeningWinnerRef = useRef<Player | null>(null);
   const autoTestMaxDeficitRef = useRef<Record<Player, number>>({ White: 0, Black: 0 });
+  const autoTestHighestPipsRef = useRef<Record<Player, number>>({ White: 0, Black: 0 });
+  const autoTestLargestPipGapRef = useRef(0);
+  const autoTestGameEnemyControlTriggersRef = useRef(0);
+  const autoTestGameEnemyControlMovesRef = useRef(0);
+  const autoTestGameWhiteGainedEnemyControlRef = useRef(0);
+  const autoTestGameBlackGainedEnemyControlRef = useRef(0);
+  const autoTestGameEnemyControlWhileTrailing30Ref = useRef(0);
+  const autoTestGameEnemyControlCausedHitsRef = useRef(0);
+  const autoTestBatchResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
@@ -1070,6 +1324,15 @@ export default function App() {
 
   useEffect(() => {
     console.table(runEngineSelfTests().map((result) => ({ result })));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (autoTestBatchResumeTimerRef.current !== null) {
+        clearTimeout(autoTestBatchResumeTimerRef.current);
+        autoTestBatchResumeTimerRef.current = null;
+      }
+    };
   }, []);
 
   const legalAnalysis = useMemo(
@@ -1647,6 +1910,9 @@ export default function App() {
       return;
     }
 
+    const openingTurnAnalysis = analyzeLegality(board, openingWinner, openingDice, chosenMode, bar, off, "NORMAL");
+    recordAutoTestRoll(openingWinner, openingDice, openingTurnAnalysis.legalMoves.length > 0, bar);
+
     setMode(chosenMode);
     setCurrentPlayer(openingWinner);
     setController(openingWinner);
@@ -1703,6 +1969,7 @@ export default function App() {
 
     const nextLegalAnalysis = analyzeLegality(board, nextPlayer, dice, nextMode, bar, off, "NORMAL");
     const noLegalMoves = nextLegalAnalysis.legalMoves.length === 0;
+    recordAutoTestRoll(nextPlayer, dice, !noLegalMoves, bar);
 
     setCurrentPlayer(nextPlayer);
     setGamePhase("NORMAL_TURN");
@@ -1804,12 +2071,45 @@ export default function App() {
       },
     ]);
 
+    const enemyControlMoveBeforeThisMove = autoTestRunning && controlState === "ENEMY_CONTROL";
+    const peaceViolationTriggersEnemyControl = mode === "PEACE" && controlState === "NORMAL" && move.isHit;
+
+    if (autoTestRunning) {
+      autoTestCheckerMovesRef.current += 1;
+      autoTestGameCheckerMovesRef.current += 1;
+      if (move.isHit) {
+        autoTestHitsRef.current += 1;
+        autoTestGameHitsRef.current += 1;
+      }
+      if (move.isBearOff) {
+        autoTestBearOffsRef.current += 1;
+        autoTestGameBearOffsRef.current += 1;
+      }
+    }
+
+    if (autoTestRunning && enemyControlMoveBeforeThisMove) {
+      autoTestGameEnemyControlMovesRef.current += 1;
+      if (move.isHit) autoTestGameEnemyControlCausedHitsRef.current += 1;
+    }
+
+    if (autoTestRunning && peaceViolationTriggersEnemyControl) {
+      const beneficiary = opponent(currentPlayer);
+      const beneficiaryPips = calculatePipCount(board, beneficiary, bar);
+      const violatingPlayerPips = calculatePipCount(board, currentPlayer, bar);
+      autoTestGameEnemyControlTriggersRef.current += 1;
+      if (beneficiary === "White") autoTestGameWhiteGainedEnemyControlRef.current += 1;
+      if (beneficiary === "Black") autoTestGameBlackGainedEnemyControlRef.current += 1;
+      if (beneficiaryPips - violatingPlayerPips >= 30) {
+        autoTestGameEnemyControlWhileTrailing30Ref.current += 1;
+      }
+    }
+
     const result = applyMove(board, move, currentPlayer, bar, off);
     const nextDice = removeDie(remainingDice, move.die);
     let nextControlState = controlState;
     let nextController = controller;
 
-    if (mode === "PEACE" && controlState === "NORMAL" && move.isHit) {
+    if (peaceViolationTriggersEnemyControl) {
       nextControlState = "ENEMY_CONTROL";
       nextController = opponent(currentPlayer);
     }
@@ -1911,14 +2211,86 @@ export default function App() {
       White: Math.max(autoTestMaxDeficitRef.current.White, Math.max(0, whitePips - blackPips)),
       Black: Math.max(autoTestMaxDeficitRef.current.Black, Math.max(0, blackPips - whitePips)),
     };
+    autoTestHighestPipsRef.current = {
+      White: Math.max(autoTestHighestPipsRef.current.White, whitePips),
+      Black: Math.max(autoTestHighestPipsRef.current.Black, blackPips),
+    };
+    autoTestLargestPipGapRef.current = Math.max(autoTestLargestPipGapRef.current, Math.abs(whitePips - blackPips));
+  }
+
+  function recordAutoTestRoll(player: Player, dice: number[], hasLegalMoves: boolean, barState: BarState): void {
+    if (!autoTestRunning) return;
+
+    const isDoubles = dice.length >= 2 && dice.every((die) => die === dice[0]);
+
+    autoTestTotalDiceRollsRef.current += 1;
+    autoTestGameDiceRollsRef.current += 1;
+
+    if (hasLegalMoves) {
+      autoTestPlayableRollsRef.current += 1;
+      autoTestGamePlayableRollsRef.current += 1;
+    } else {
+      autoTestUnplayableRollsRef.current += 1;
+      autoTestGameUnplayableRollsRef.current += 1;
+      autoTestNoMovePassesRef.current += 1;
+      autoTestGameNoMovePassesRef.current += 1;
+
+      if (barState[player] > 0) {
+        autoTestNoEntryRollsRef.current += 1;
+        autoTestGameNoEntryRollsRef.current += 1;
+      }
+    }
+
+    if (isDoubles) {
+      autoTestDoublesRolledRef.current += 1;
+      autoTestGameDoublesRolledRef.current += 1;
+
+      if (hasLegalMoves) {
+        autoTestPlayableDoublesRef.current += 1;
+        autoTestGamePlayableDoublesRef.current += 1;
+      } else {
+        autoTestBlockedDoublesRef.current += 1;
+        autoTestGameBlockedDoublesRef.current += 1;
+      }
+    }
+
+    setAutoTestSummary((current) => ({
+      ...current,
+      totalDiceRolls: autoTestTotalDiceRollsRef.current,
+      playableRolls: autoTestPlayableRollsRef.current,
+      unplayableRolls: autoTestUnplayableRollsRef.current,
+      noEntryRolls: autoTestNoEntryRollsRef.current,
+      doublesRolled: autoTestDoublesRolledRef.current,
+      playableDoubles: autoTestPlayableDoublesRef.current,
+      blockedDoubles: autoTestBlockedDoublesRef.current,
+      noMovePasses: autoTestNoMovePassesRef.current,
+    }));
   }
 
   function resetAutoTestCurrentGameTrackers(): void {
     autoTestGameStepRef.current = 0;
     autoTestGameNoMovePassesRef.current = 0;
+    autoTestGameDiceRollsRef.current = 0;
+    autoTestGamePlayableRollsRef.current = 0;
+    autoTestGameUnplayableRollsRef.current = 0;
+    autoTestGameNoEntryRollsRef.current = 0;
+    autoTestGameDoublesRolledRef.current = 0;
+    autoTestGamePlayableDoublesRef.current = 0;
+    autoTestGameBlockedDoublesRef.current = 0;
+    autoTestGameCheckerMovesRef.current = 0;
+    autoTestGameHitsRef.current = 0;
+    autoTestGameBearOffsRef.current = 0;
     autoTestCurrentStartModeRef.current = null;
     autoTestCurrentOpeningWinnerRef.current = null;
     autoTestMaxDeficitRef.current = { White: 0, Black: 0 };
+    autoTestHighestPipsRef.current = { White: 167, Black: 167 };
+    autoTestLargestPipGapRef.current = 0;
+    autoTestGameEnemyControlTriggersRef.current = 0;
+    autoTestGameEnemyControlMovesRef.current = 0;
+    autoTestGameWhiteGainedEnemyControlRef.current = 0;
+    autoTestGameBlackGainedEnemyControlRef.current = 0;
+    autoTestGameEnemyControlWhileTrailing30Ref.current = 0;
+    autoTestGameEnemyControlCausedHitsRef.current = 0;
   }
 
   function resetAutoTestCounters(targetGames: number): void {
@@ -1931,7 +2303,21 @@ export default function App() {
     autoTestTotalStepsRef.current = 0;
     autoTestLongestGameStepsRef.current = 0;
     autoTestNoMovePassesRef.current = 0;
-    const freshReport = createEmptyAutoTestReport(targetGames, "Running.");
+    autoTestTotalDiceRollsRef.current = 0;
+    autoTestPlayableRollsRef.current = 0;
+    autoTestUnplayableRollsRef.current = 0;
+    autoTestNoEntryRollsRef.current = 0;
+    autoTestDoublesRolledRef.current = 0;
+    autoTestPlayableDoublesRef.current = 0;
+    autoTestBlockedDoublesRef.current = 0;
+    autoTestCheckerMovesRef.current = 0;
+    autoTestHitsRef.current = 0;
+    autoTestBearOffsRef.current = 0;
+    const freshReport: AutoTestReport = {
+      ...createEmptyAutoTestReport(targetGames, "Running."),
+      speedLabel: AUTO_TEST_SPEED_LABELS[autoTestSpeed],
+      strategyLabel: AUTO_TEST_STRATEGY_LABELS[autoTestStrategy],
+    };
     publishAutoTestReport(freshReport);
     setAutoTestSummary(createAutoTestSummary(targetGames));
   }
@@ -1981,19 +2367,110 @@ export default function App() {
     return null;
   }
 
+  function isOpponentHomePoint(player: Player, pointIndex: number): boolean {
+    return player === "White" ? pointIndex >= 18 : pointIndex <= 5;
+  }
+
+  function countSingleBlots(testBoard: Point[], player: Player): number {
+    return testBoard.filter((point) => point.owner === player && point.count === 1).length;
+  }
+
+  function hasOpponentHomeAnchor(testBoard: Point[], player: Player): boolean {
+    return testBoard.some((point, index) =>
+      point.owner === player && point.count >= 2 && isOpponentHomePoint(player, index)
+    );
+  }
+
+  function scoreAutoTestMove(move: Move): number {
+    const beforePips = calculatePipCount(board, currentPlayer, bar);
+    const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
+    const deficit = Math.max(0, beforePips - opponentPips);
+    const beforeBlots = countSingleBlots(board, currentPlayer);
+    const applied = applyMove(board, move, currentPlayer, bar, off);
+    const afterPips = calculatePipCount(applied.board, currentPlayer, applied.bar);
+    const afterBlots = countSingleBlots(applied.board, currentPlayer);
+    const pipGain = beforePips - afterPips;
+    const landingPoint =
+      move.isBearOff || move.to < 0 || move.to > 23 ? null : applied.board[move.to];
+
+    let score = pipGain * 2;
+
+    if (move.isBearOff) score += 80;
+    if (move.isBarEntry) score += 45;
+    if (move.isHit) score += mode === "WAR" ? 95 : 45;
+
+    if (autoTestStrategy === "RANDOM_LEGAL") {
+      score += Math.random() * 100;
+      return score;
+    }
+
+    if (mode === "PEACE" && move.isHit) score -= 40;
+
+    const newBlots = Math.max(0, afterBlots - beforeBlots);
+    const createsLandingBlot =
+      landingPoint !== null &&
+      landingPoint.owner === currentPlayer &&
+      landingPoint.count === 1;
+
+    if (autoTestStrategy === "BALANCED") {
+      score -= newBlots * 16;
+      if (createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score -= 25;
+      if (deficit >= 40 && createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score += 18;
+    }
+
+    if (autoTestStrategy === "CONTROLLED_COMEBACK") {
+      const opponentHomeBlot = createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to);
+      const lateBearingOffPhase =
+        off[currentPlayer] >= 5 ||
+        off[opponent(currentPlayer)] >= 5 ||
+        allHome(board, currentPlayer, bar) ||
+        allHome(board, opponent(currentPlayer), bar);
+      const hasAnchor = hasOpponentHomeAnchor(board, currentPlayer);
+
+      // Controlled Comeback should create volatility only when the player is actually desperate.
+      // It should not throw away a playable race, and it should stop gambling once bear-off has begun.
+      score -= newBlots * (lateBearingOffPhase ? 24 : 12);
+      if (opponentHomeBlot) score -= lateBearingOffPhase ? 55 : 24;
+
+      if (!lateBearingOffPhase && deficit >= 40 && createsLandingBlot) score += 10;
+      if (!lateBearingOffPhase && deficit >= 60 && createsLandingBlot) score += 14;
+      if (!lateBearingOffPhase && deficit >= 80 && createsLandingBlot) score += 18;
+
+      if (!lateBearingOffPhase && opponentHomeBlot && deficit >= 60 && (hasAnchor || deficit >= 90)) {
+        score += 22;
+      }
+
+      if (!lateBearingOffPhase && mode === "PEACE" && opponentHomeBlot && deficit >= 80 && hasAnchor) {
+        score += 16;
+      }
+
+      if (deficit < 40 && opponentHomeBlot) score -= 35;
+      if (deficit < 60 && newBlots >= 2) score -= 18;
+      if (lateBearingOffPhase && !move.isBearOff && createsLandingBlot) score -= 25;
+    }
+
+    score += Math.random() * 8;
+    return score;
+  }
+
   function chooseAutoTestMove(): Move | null {
     if (legalMoves.length === 0) return null;
 
-    const barEntry = legalMoves.find((move) => move.isBarEntry);
-    if (barEntry) return barEntry;
+    const barEntryMoves = legalMoves.filter((move) => move.isBarEntry);
+    const candidateMoves = barEntryMoves.length > 0 ? barEntryMoves : legalMoves;
 
-    const bearOff = legalMoves.find((move) => move.isBearOff);
-    if (bearOff && legalMoves.length <= 2) return bearOff;
+    let bestMove = candidateMoves[0];
+    let bestScore = Number.NEGATIVE_INFINITY;
 
-    const hit = legalMoves.find((move) => move.isHit);
-    if (mode === "WAR" && hit) return hit;
+    for (const move of candidateMoves) {
+      const score = scoreAutoTestMove(move);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
 
-    return legalMoves[0];
+    return bestMove;
   }
 
   function stopAutoTestWithError(reason: string): void {
@@ -2006,6 +2483,14 @@ export default function App() {
 
   function completeAutoTestGame(winningPlayer: Player | null): void {
     const resolvedWinner = winningPlayer ?? finalResult?.winner ?? null;
+    const resolvedLoser: Player | null = resolvedWinner === "White" ? "Black" : resolvedWinner === "Black" ? "White" : null;
+    const loserPipsRemaining = resolvedLoser ? calculatePipCount(board, resolvedLoser, bar) : undefined;
+    const loserCheckersOff = resolvedLoser ? off[resolvedLoser] : undefined;
+    const checkerMargin = typeof loserCheckersOff === "number" ? 15 - loserCheckersOff : undefined;
+    const highestWhitePips = Math.max(autoTestHighestPipsRef.current.White, calculatePipCount(board, "White", bar));
+    const highestBlackPips = Math.max(autoTestHighestPipsRef.current.Black, calculatePipCount(board, "Black", bar));
+    const highestPipCount = Math.max(highestWhitePips, highestBlackPips);
+    const largestPipGap = autoTestLargestPipGapRef.current;
     autoTestCompletedGamesRef.current += 1;
     autoTestLongestGameStepsRef.current = Math.max(autoTestLongestGameStepsRef.current, autoTestGameStepRef.current);
 
@@ -2019,8 +2504,39 @@ export default function App() {
       openingWinner: autoTestCurrentOpeningWinnerRef.current ?? openingWinner,
       startingMode: autoTestCurrentStartModeRef.current,
       steps: autoTestGameStepRef.current,
-      noMovePasses: autoTestGameNoMovePassesRef.current,
+      diceRolls: autoTestGameDiceRollsRef.current,
+      playableRolls: autoTestGamePlayableRollsRef.current,
+      unplayableRolls: autoTestGameUnplayableRollsRef.current,
+      noEntryRolls: autoTestGameNoEntryRollsRef.current,
+      doublesRolled: autoTestGameDoublesRolledRef.current,
+      playableDoubles: autoTestGamePlayableDoublesRef.current,
+      blockedDoubles: autoTestGameBlockedDoublesRef.current,
+      checkerMoves: autoTestGameCheckerMovesRef.current,
+      hits: autoTestGameHitsRef.current,
+      bearOffs: autoTestGameBearOffsRef.current,
+      noMovePasses: autoTestGameUnplayableRollsRef.current,
       winnerGreatestDeficitPips: resolvedWinner ? autoTestMaxDeficitRef.current[resolvedWinner] : 0,
+      loserPipsRemaining,
+      loserCheckersOff,
+      finalPipMargin: loserPipsRemaining,
+      checkerMargin,
+      highestWhitePips,
+      highestBlackPips,
+      highestPipCount,
+      largestPipGap,
+      extremePipEvent: highestPipCount >= 300 || largestPipGap >= 200 || (loserPipsRemaining ?? 0) >= 100,
+      enemyControlTriggers: autoTestGameEnemyControlTriggersRef.current,
+      enemyControlMoves: autoTestGameEnemyControlMovesRef.current,
+      whiteGainedEnemyControl: autoTestGameWhiteGainedEnemyControlRef.current,
+      blackGainedEnemyControl: autoTestGameBlackGainedEnemyControlRef.current,
+      enemyControlWhileTrailing30: autoTestGameEnemyControlWhileTrailing30Ref.current,
+      enemyControlCausedHits: autoTestGameEnemyControlCausedHitsRef.current,
+      enemyControlBeneficiaryWon:
+        resolvedWinner === "White"
+          ? autoTestGameWhiteGainedEnemyControlRef.current > 0
+          : resolvedWinner === "Black"
+          ? autoTestGameBlackGainedEnemyControlRef.current > 0
+          : false,
     };
 
     const nextReport: AutoTestReport = {
@@ -2036,7 +2552,7 @@ export default function App() {
     appendAutoTestLog(
       `Game ${autoTestCompletedGamesRef.current}/${autoTestTargetGamesRef.current} complete. ${
         resolvedWinner ? `${resolvedWinner} won` : "Winner already recorded"
-      }. Steps: ${autoTestGameStepRef.current}. Comeback: ${gameResult.winnerGreatestDeficitPips} pips.`
+      }. Rolls: ${gameResult.diceRolls ?? 0}. Moves: ${gameResult.checkerMoves ?? 0}. Final margin: ${gameResult.finalPipMargin ?? 0} pips. Comeback: ${gameResult.winnerGreatestDeficitPips} pips. Enemy Control: ${gameResult.enemyControlTriggers ?? 0}.`
     );
 
     if (autoTestCompletedGamesRef.current >= autoTestTargetGamesRef.current) {
@@ -2051,6 +2567,21 @@ export default function App() {
     resetAutoTestCurrentGameTrackers();
     resetNewGame();
     appendAutoTestLog(`Starting game ${autoTestCompletedGamesRef.current + 1}/${autoTestTargetGamesRef.current}.`);
+
+    if (
+      autoTestSpeed === "SAFE_TURBO" &&
+      autoTestCompletedGamesRef.current > 0 &&
+      autoTestCompletedGamesRef.current % AUTO_TEST_BATCH_CHECKPOINT_GAMES === 0
+    ) {
+      setAutoTestRunning(false);
+      setMessage(`Auto Test checkpoint saved after ${autoTestCompletedGamesRef.current} game(s). Resuming shortly.`);
+      appendAutoTestLog(`Checkpoint saved after ${autoTestCompletedGamesRef.current} game(s). Browser breath before next batch.`);
+      if (autoTestBatchResumeTimerRef.current !== null) clearTimeout(autoTestBatchResumeTimerRef.current);
+      autoTestBatchResumeTimerRef.current = setTimeout(() => {
+        autoTestBatchResumeTimerRef.current = null;
+        setAutoTestRunning(true);
+      }, 450);
+    }
   }
 
   function runAutoTestStep(): void {
@@ -2107,9 +2638,6 @@ export default function App() {
     }
 
     if (remainingDice.length > 0 && legalMoves.length === 0) {
-      autoTestNoMovePassesRef.current += 1;
-      autoTestGameNoMovePassesRef.current += 1;
-      setAutoTestSummary((current) => ({ ...current, noMovePasses: autoTestNoMovePassesRef.current }));
       appendAutoTestLog(`${currentPlayer} has no legal moves with dice ${remainingDice.join(", ")}. Auto-pass will advance.`);
       return;
     }
@@ -2133,16 +2661,24 @@ export default function App() {
     if (gamePhase !== "OPENING_ROLL" || moveLog.length > 0 || winner || finalResult) {
       resetNewGame();
     }
-    appendAutoTestLog(`Auto Test started: ${targetGames} game(s), speed ${AUTO_TEST_SPEED_LABELS[autoTestSpeed]}. Report will be saved after every completed game.`);
+    appendAutoTestLog(`Auto Test started: ${targetGames} game(s), speed ${AUTO_TEST_SPEED_LABELS[autoTestSpeed]}, strategy ${AUTO_TEST_STRATEGY_LABELS[autoTestStrategy]}. Report will be saved after every completed game.`);
   }
 
   function pauseAutoTest(): void {
+    if (autoTestBatchResumeTimerRef.current !== null) {
+      clearTimeout(autoTestBatchResumeTimerRef.current);
+      autoTestBatchResumeTimerRef.current = null;
+    }
     setAutoTestRunning(false);
     setAutoTestStopReason(`Paused after ${autoTestCompletedGamesRef.current} completed game(s).`);
     appendAutoTestLog("Auto Test paused. Current report saved.");
   }
 
   function stopAutoTest(): void {
+    if (autoTestBatchResumeTimerRef.current !== null) {
+      clearTimeout(autoTestBatchResumeTimerRef.current);
+      autoTestBatchResumeTimerRef.current = null;
+    }
     setAutoTestRunning(false);
     setAutoTestError(null);
     autoTestStepRef.current = 0;
@@ -3624,7 +4160,25 @@ export default function App() {
           <option value="SLOW">Slow</option>
           <option value="FAST">Fast</option>
           <option value="VERY_FAST">Very Fast</option>
-          <option value="TURBO">Turbo</option>
+          <option value="SAFE_TURBO">Safe Turbo</option>
+        </select>
+
+        <select
+          value={autoTestStrategy}
+          onChange={(event) => setAutoTestStrategy(event.target.value as AutoTestStrategy)}
+          disabled={autoTestRunning}
+          title="Auto Test computer strategy"
+          style={{
+            ...luxuryButton,
+            minWidth: 178,
+            padding: "8px 10px",
+            opacity: autoTestRunning ? 0.58 : 1,
+            cursor: autoTestRunning ? "not-allowed" : "pointer",
+          }}
+        >
+          <option value="RANDOM_LEGAL">Random Legal</option>
+          <option value="BALANCED">Balanced</option>
+          <option value="CONTROLLED_COMEBACK">Controlled Comeback</option>
         </select>
 
         <button
@@ -3842,7 +4396,7 @@ export default function App() {
           >
             <span>Computer vs Computer Auto Test: {autoTestStatus}</span>
             <span>
-              Speed: {AUTO_TEST_SPEED_LABELS[autoTestSpeed]} • Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames} • Steps: {autoTestSummary.totalSteps}
+              Speed: {AUTO_TEST_SPEED_LABELS[autoTestSpeed]} • Strategy: {AUTO_TEST_STRATEGY_LABELS[autoTestStrategy]} • Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames} • Rolls: {autoTestSummary.totalDiceRolls} • Internal cycles: {autoTestSummary.totalSteps}
             </span>
           </div>
           {autoTestError && (
@@ -3876,11 +4430,29 @@ export default function App() {
             <div>Opening winner wins: {autoTestSummary.openingWinnerWins} ({formatPercent(autoTestSummary.openingWinnerWins, autoTestSummary.openingWinnerWins + autoTestSummary.openingWinnerLosses)})</div>
             <div>WAR chooser wins: {autoTestSummary.warStartWins}/{autoTestSummary.warStartGames}</div>
             <div>PEACE chooser wins: {autoTestSummary.peaceStartWins}/{autoTestSummary.peaceStartGames}</div>
-            <div>Average game: {autoTestSummary.averageGameSteps} steps</div>
-            <div>Shortest game: {autoTestSummary.shortestGameSteps} steps</div>
-            <div>Longest game: {autoTestSummary.longestGameSteps} steps</div>
-            <div>No-move passes: {autoTestSummary.noMovePasses}</div>
+            <div>Average game: {autoTestSummary.averageDiceRolls} dice rolls/turns</div>
+            <div>Shortest game: {autoTestSummary.shortestGameRolls} dice rolls/turns</div>
+            <div>Longest game: {autoTestSummary.longestGameRolls} dice rolls/turns</div>
+            <div>Playable rolls: {autoTestSummary.playableRolls}</div>
+            <div>Unplayable rolls / auto-passes: {autoTestSummary.unplayableRolls}</div>
+            <div>No-entry rolls from bar: {autoTestSummary.noEntryRolls}</div>
+            <div>Doubles: {autoTestSummary.doublesRolled} total / {autoTestSummary.playableDoubles} playable / {autoTestSummary.blockedDoubles} blocked</div>
+            <div>Checker moves: {autoTestSummary.checkerMoves} • Hits: {autoTestSummary.hits} • Bear-offs: {autoTestSummary.bearOffs}</div>
+            <div>Internal cycles: avg {autoTestSummary.averageGameSteps}, longest {autoTestSummary.longestGameSteps}</div>
             <div>Greatest comeback: {autoTestSummary.greatestComebackPips} pips</div>
+            <div>Avg final margin: {autoTestSummary.averageFinalPipMargin} pips</div>
+            <div>Median final margin: {autoTestSummary.medianFinalPipMargin} pips</div>
+            <div>Largest final margin: {autoTestSummary.largestFinalPipMargin} pips</div>
+            <div>Avg bear-off margin: {autoTestSummary.averageCheckerMargin} checkers</div>
+            <div>Avg loser off: {autoTestSummary.averageLoserCheckersOff} • Shutouts: {autoTestSummary.shutoutGames}</div>
+            <div>Loser off buckets: 1-5 {autoTestSummary.loserOff1To5} • 6-10 {autoTestSummary.loserOff6To10} • 11-14 {autoTestSummary.loserOff11To14}</div>
+            <div>Highest pip count: {autoTestSummary.highestPipCount}</div>
+            <div>Largest pip gap: {autoTestSummary.largestPipGap}</div>
+            <div>Extreme games: margin 100+ {autoTestSummary.finalMarginsOver100} • pip count 300+ {autoTestSummary.highestPipCountsOver300} • gap 200+ {autoTestSummary.largestPipGapsOver200}</div>
+            <div>Enemy Control triggers: {autoTestSummary.enemyControlTriggers}</div>
+            <div>Enemy Control moves: {autoTestSummary.enemyControlMoves}</div>
+            <div>EC beneficiary wins: {autoTestSummary.enemyControlBeneficiaryWins} ({autoTestSummary.enemyControlBeneficiaryWinRate})</div>
+            <div>EC while trailing 30+: {autoTestSummary.enemyControlWhileTrailing30}</div>
           </div>
           <div
             style={{
@@ -3894,7 +4466,7 @@ export default function App() {
               padding: "6px 9px",
             }}
           >
-            Saved report: {autoTestSummary.stopReason} • {autoTestSummary.greatestComebackSummary}
+            Saved report: {autoTestSummary.stopReason} • Avg final margin {autoTestSummary.averageFinalPipMargin} pips • Median {autoTestSummary.medianFinalPipMargin} pips • {autoTestSummary.greatestComebackSummary}
           </div>
 
           <div
