@@ -3776,7 +3776,19 @@ export default function App() {
   const modeIsWar = mode === "WAR";
   const enemyControl = controlState === "ENEMY_CONTROL";
   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
-  const shellWidth = "min(98vw, 1220px)";
+  const shellWidth = "min(calc(100vw - 12px), 1120px)";
+  const activeTurnIsWhite = currentPlayer === "White";
+  const activeTurnGlowBackground = enemyControl
+    ? "linear-gradient(145deg, #ffe76a, #d77b00 58%, #3b1000)"
+    : activeTurnIsWhite
+    ? "linear-gradient(145deg, #fffef3, #f0d98d 52%, #6f4a16)"
+    : "linear-gradient(145deg, #7a431e, #321304 60%, #050201)";
+  const activeTurnGlowBorder = enemyControl
+    ? "3px solid #ffe94a"
+    : activeTurnIsWhite
+    ? "3px solid #fff6b8"
+    : "3px solid #c4792b";
+  const activeTurnGlowColor = activeTurnIsWhite && !enemyControl ? "#1a0900" : "#fff1c0";
 
   const doctrineBannerText = enemyControl
     ? "ENEMY CONTROL"
@@ -3920,7 +3932,9 @@ export default function App() {
         background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
         minHeight: "100vh",
         color: "white",
-        padding: "clamp(4px, 0.7vw, 10px)",
+        padding: "clamp(3px, 0.55vw, 8px)",
+        boxSizing: "border-box",
+        width: "100vw",
         fontFamily: "Georgia, 'Times New Roman', serif",
         overflowX: "hidden",
         maxWidth: "100vw",
@@ -4273,7 +4287,7 @@ export default function App() {
           margin: "0 auto clamp(4px, 0.5vw, 7px)",
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: 6,
+          gap: 4,
           alignItems: "stretch",
         }}
       >
@@ -4287,7 +4301,7 @@ export default function App() {
               background: "linear-gradient(145deg, rgba(255,238,190,0.16), rgba(20,8,2,0.86))",
               border: "2px solid rgba(226,171,87,0.55)",
               borderRadius: 13,
-              padding: "5px 8px",
+              padding: "4px 7px",
               boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.34)",
             }}
           >
@@ -4362,7 +4376,7 @@ export default function App() {
           width: shellWidth,
           margin: "0 auto clamp(7px, 0.8vw, 10px)",
           display: "grid",
-          gridTemplateColumns: "1.08fr 0.66fr 1fr 0.74fr 0.86fr",
+          gridTemplateColumns: "1.04fr 0.72fr 1fr 0.76fr 0.48fr",
           gap: 6,
           alignItems: "stretch",
         }}
@@ -4395,12 +4409,18 @@ export default function App() {
 
         <div
           style={{
-            background: "linear-gradient(145deg, #17120d, #030201)",
-            border: "2px solid #9a6328",
+            background: activeTurnGlowBackground,
+            border: activeTurnGlowBorder,
             borderRadius: 16,
             padding: 4,
             textAlign: "center",
             minHeight: 58,
+            color: activeTurnGlowColor,
+            boxShadow: enemyControl
+              ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
+              : activeTurnIsWhite
+              ? "0 0 20px rgba(255,248,190,0.72), inset 0 1px 0 rgba(255,255,255,0.55)"
+              : "0 0 20px rgba(190,105,30,0.72), inset 0 1px 0 rgba(255,210,140,0.22)",
           }}
         >
           <div style={{ fontWeight: "bold", marginBottom: 1, fontSize: 9 }}>DICE</div>
@@ -4423,38 +4443,28 @@ export default function App() {
 
         <div
           style={{
-            background: enemyControl ? "linear-gradient(145deg, #3b1f00, #ff9a00)" : "linear-gradient(145deg, #17120d, #030201)",
-            border: enemyControl ? "3px solid #ffd000" : "2px solid #6f4a22",
+            background: activeTurnGlowBackground,
+            border: activeTurnGlowBorder,
             borderRadius: 16,
-            padding: "5px 7px",
+            padding: "5px 6px",
             textAlign: "center",
-            color: enemyControl ? "#fff7c0" : "white",
+            color: activeTurnGlowColor,
             minHeight: 58,
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            gap: 3,
+            gap: 2,
+            boxShadow: enemyControl
+              ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
+              : activeTurnIsWhite
+              ? "0 0 18px rgba(255,248,190,0.62), inset 0 1px 0 rgba(255,255,255,0.5)"
+              : "0 0 18px rgba(190,105,30,0.68), inset 0 1px 0 rgba(255,210,140,0.22)",
           }}
         >
-          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>TURN</div>
-          <div style={{ fontSize: "clamp(18px, 1.9vw, 25px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer}</div>
-          <div
-            style={{
-              marginTop: 2,
-              alignSelf: "center",
-              borderRadius: 999,
-              border: enemyControl || controller !== currentPlayer ? "2px solid #ffe66d" : "1px solid rgba(255,226,138,0.38)",
-              background: enemyControl || controller !== currentPlayer ? "linear-gradient(145deg,#fff0a8,#d17c00 68%,#4a1600)" : "rgba(255,226,138,0.12)",
-              color: enemyControl || controller !== currentPlayer ? "#210700" : "#f6d58b",
-              padding: "3px 8px",
-              fontSize: "clamp(8px, 0.78vw, 11px)",
-              fontWeight: 900,
-              letterSpacing: 0.4,
-              lineHeight: 1.05,
-              boxShadow: enemyControl || controller !== currentPlayer ? "0 0 14px rgba(255,211,60,0.72)" : "none",
-            }}
-          >
-            {enemyControl || controller !== currentPlayer ? "OPPONENT MAKES ALL MOVES" : "NORMAL CONTROL"}
+          <div style={{ fontSize: "clamp(8px, 0.78vw, 10px)", fontWeight: 900, letterSpacing: 1.1, opacity: 0.82 }}>MOVE</div>
+          <div style={{ fontSize: "clamp(15px, 1.45vw, 21px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer.toUpperCase()}</div>
+          <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900, lineHeight: 1 }}>
+            {enemyControl || controller !== currentPlayer ? "⚡" : "●"}
           </div>
         </div>
 
@@ -4503,6 +4513,7 @@ export default function App() {
         <button
           style={{
             ...luxuryButton,
+            order: 1,
             opacity: canRollOpening ? 1 : 0.45,
             cursor: canRollOpening ? "pointer" : "not-allowed",
           }}
@@ -4542,8 +4553,11 @@ export default function App() {
         <button
           style={{
             ...luxuryButton,
-            minWidth: 76,
-            padding: "9px 14px",
+            order: 3,
+            minWidth: 62,
+            padding: "7px 11px",
+            fontSize: 11,
+            opacity: history.length > 0 ? 1 : 0.58,
           }}
           onClick={undoMove}
         >
@@ -4553,8 +4567,10 @@ export default function App() {
         <button
           style={{
             ...luxuryButton,
-            minWidth: 76,
-            padding: "9px 14px",
+            order: 4,
+            minWidth: 62,
+            padding: "7px 11px",
+            fontSize: 11,
             background: confirmResign
               ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
               : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
@@ -4573,10 +4589,11 @@ export default function App() {
         <button
           style={{
             ...luxuryButton,
-            minWidth: 142,
-            padding: "11px 24px",
-            fontSize: 13,
-            letterSpacing: 0.8,
+            order: 2,
+            minWidth: "clamp(176px, 18vw, 240px)",
+            padding: "clamp(13px, 1.25vw, 17px) clamp(28px, 3vw, 42px)",
+            fontSize: "clamp(16px, 1.55vw, 22px)",
+            letterSpacing: 1.4,
             background: canSubmitTurn
               ? "linear-gradient(145deg, #fff5c8, #d89024 55%, #653000)"
               : "linear-gradient(145deg, #201812, #050302)",
@@ -4587,7 +4604,8 @@ export default function App() {
               : "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
             opacity: canSubmitTurn ? 1 : 0.45,
             cursor: canSubmitTurn ? "pointer" : "not-allowed",
-            pointerEvents: canSubmitTurn ? "auto" : "none",
+            pointerEvents: "auto",
+            transform: canSubmitTurn ? "scale(1.03)" : "scale(1)",
           }}
           type="button"
           disabled={!canSubmitTurn}
@@ -5085,7 +5103,7 @@ export default function App() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 68px",
+            gridTemplateColumns: "minmax(0, 1fr) 40px minmax(0, 1fr) 56px",
             gap: 6,
           }}
         >
@@ -5131,7 +5149,7 @@ export default function App() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 44px minmax(0, 1fr) 68px",
+            gridTemplateColumns: "minmax(0, 1fr) 40px minmax(0, 1fr) 56px",
             gap: 6,
           }}
         >
