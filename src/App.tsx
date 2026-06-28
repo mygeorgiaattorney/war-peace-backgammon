@@ -5,7 +5,7 @@ type Mode = "WAR" | "PEACE";
 type ControlState = "NORMAL" | "ENEMY_CONTROL";
 type GamePhase = "OPENING_ROLL" | "MODE_CHOICE" | "OPENING_TURN" | "NORMAL_TURN" | "GAME_OVER";
 type AutoTestSpeed = "SLOW" | "FAST" | "VERY_FAST" | "SAFE_TURBO";
-type AutoTestStrategy = "RANDOM_LEGAL" | "BALANCED" | "CONTROLLED_COMEBACK";
+type AutoTestStrategy = "RANDOM_LEGAL" | "BALANCED" | "AGGRESSIVE_COMEBACK";
 
 type Point = {
   owner: Player | null;
@@ -201,8 +201,6 @@ type AutoTestReport = {
   updatedAt: string;
   targetGames: number;
   stopReason: string;
-  speedLabel?: string;
-  strategyLabel?: string;
   games: AutoTestGameResult[];
 };
 
@@ -237,12 +235,6 @@ type AutoTestSummary = {
   medianCheckerMargin: number;
   smallestCheckerMargin: number;
   largestCheckerMargin: number;
-  averageLoserCheckersOff: number;
-  medianLoserCheckersOff: number;
-  shutoutGames: number;
-  loserOff1To5: number;
-  loserOff6To10: number;
-  loserOff11To14: number;
   highestPipCount: number;
   largestPipGap: number;
   finalMarginsOver50: number;
@@ -287,7 +279,7 @@ const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
 const AUTO_TEST_STRATEGY_LABELS: Record<AutoTestStrategy, string> = {
   RANDOM_LEGAL: "Random Legal",
   BALANCED: "Balanced",
-  CONTROLLED_COMEBACK: "Controlled Comeback",
+  AGGRESSIVE_COMEBACK: "Controlled Comeback",
 };
 
 const AUTO_TEST_BATCH_CHECKPOINT_GAMES = 10;
@@ -363,9 +355,6 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
   const checkerMargins = games
     .map((game) => game.checkerMargin)
     .filter((value): value is number => typeof value === "number");
-  const loserOffValues = games
-    .map((game) => game.loserCheckersOff)
-    .filter((value): value is number => typeof value === "number");
   const highestPipCount = games.reduce((highest, game) => Math.max(highest, game.highestPipCount ?? 0), 0);
   const largestPipGap = games.reduce((highest, game) => Math.max(highest, game.largestPipGap ?? 0), 0);
   const noMovePasses = unplayableRolls;
@@ -428,12 +417,6 @@ function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
     medianCheckerMargin: medianNumber(checkerMargins),
     smallestCheckerMargin: checkerMargins.length === 0 ? 0 : Math.min(...checkerMargins),
     largestCheckerMargin: checkerMargins.length === 0 ? 0 : Math.max(...checkerMargins),
-    averageLoserCheckersOff: averageNumber(loserOffValues),
-    medianLoserCheckersOff: medianNumber(loserOffValues),
-    shutoutGames: games.filter((game) => game.loserCheckersOff === 0).length,
-    loserOff1To5: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 1 && game.loserCheckersOff <= 5).length,
-    loserOff6To10: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 6 && game.loserCheckersOff <= 10).length,
-    loserOff11To14: games.filter((game) => typeof game.loserCheckersOff === "number" && game.loserCheckersOff >= 11 && game.loserCheckersOff <= 14).length,
     highestPipCount,
     largestPipGap,
     finalMarginsOver50: games.filter((game) => (game.finalPipMargin ?? 0) >= 50).length,
@@ -497,8 +480,6 @@ function formatAutoTestReportText(report: AutoTestReport): string {
     `Started: ${new Date(report.startedAt).toLocaleString()}`,
     `Updated: ${new Date(report.updatedAt).toLocaleString()}`,
     `Stop reason: ${report.stopReason}`,
-    `Speed: ${report.speedLabel ?? "Unknown"}`,
-    `Strategy: ${report.strategyLabel ?? "Unknown"}`,
     "",
     `Games completed: ${summary.completedGames}/${summary.targetGames}`,
     `White wins: ${summary.whiteWins}`,
@@ -540,12 +521,6 @@ function formatAutoTestReportText(report: AutoTestReport): string {
     `Average checker/off margin: ${summary.averageCheckerMargin} checkers`,
     `Median checker/off margin: ${summary.medianCheckerMargin} checkers`,
     `Largest checker/off margin: ${summary.largestCheckerMargin} checkers`,
-    `Average loser checkers borne off: ${summary.averageLoserCheckersOff}`,
-    `Median loser checkers borne off: ${summary.medianLoserCheckersOff}`,
-    `Shutout games - loser bore off 0: ${summary.shutoutGames}`,
-    `Loser bore off 1-5: ${summary.loserOff1To5}`,
-    `Loser bore off 6-10: ${summary.loserOff6To10}`,
-    `Loser bore off 11-14: ${summary.loserOff11To14}`,
     `Final margins 50+ pips: ${summary.finalMarginsOver50}`,
     `Final margins 100+ pips: ${summary.finalMarginsOver100}`,
     "",
@@ -2313,11 +2288,7 @@ export default function App() {
     autoTestCheckerMovesRef.current = 0;
     autoTestHitsRef.current = 0;
     autoTestBearOffsRef.current = 0;
-    const freshReport: AutoTestReport = {
-      ...createEmptyAutoTestReport(targetGames, "Running."),
-      speedLabel: AUTO_TEST_SPEED_LABELS[autoTestSpeed],
-      strategyLabel: AUTO_TEST_STRATEGY_LABELS[autoTestStrategy],
-    };
+    const freshReport = createEmptyAutoTestReport(targetGames, "Running.");
     publishAutoTestReport(freshReport);
     setAutoTestSummary(createAutoTestSummary(targetGames));
   }
@@ -2367,86 +2338,105 @@ export default function App() {
     return null;
   }
 
-  function isOpponentHomePoint(player: Player, pointIndex: number): boolean {
+  function isOwnHomePoint(player: Player, pointIndex: number): boolean {
     return player === "White" ? pointIndex >= 18 : pointIndex <= 5;
+  }
+
+  function isOpponentHomePoint(player: Player, pointIndex: number): boolean {
+    return isOwnHomePoint(opponent(player), pointIndex);
   }
 
   function countSingleBlots(testBoard: Point[], player: Player): number {
     return testBoard.filter((point) => point.owner === player && point.count === 1).length;
   }
 
-  function hasOpponentHomeAnchor(testBoard: Point[], player: Player): boolean {
-    return testBoard.some((point, index) =>
-      point.owner === player && point.count >= 2 && isOpponentHomePoint(player, index)
-    );
+  function countMadePoints(testBoard: Point[], player: Player): number {
+    return testBoard.filter((point) => point.owner === player && point.count >= 2).length;
   }
 
-  function isPlayerEntryZone(player: Player, pointIndex: number): boolean {
-    return player === "White" ? pointIndex >= 0 && pointIndex <= 5 : pointIndex >= 18 && pointIndex <= 23;
-  }
+  function homeBoardStrength(testBoard: Point[], player: Player): number {
+    let madeHomePoints = 0;
+    let homeCheckers = 0;
+    let homeBlots = 0;
 
-  function isPlayerHomeBoard(player: Player, pointIndex: number): boolean {
-    return player === "White" ? pointIndex >= 18 && pointIndex <= 23 : pointIndex >= 0 && pointIndex <= 5;
-  }
-
-  function countOpponentBlotsInEntryZone(testBoard: Point[], player: Player): number {
-    const enemy = opponent(player);
-    return testBoard.filter((point, index) =>
-      isPlayerEntryZone(player, index) && point.owner === enemy && point.count === 1
-    ).length;
-  }
-
-  function countOpenEntryPoints(testBoard: Point[], player: Player): number {
-    const enemy = opponent(player);
-    let open = 0;
-    for (let die = 1; die <= 6; die += 1) {
-      const entry = getEntryPoint(player, die);
-      const point = testBoard[entry];
-      if (!(point.owner === enemy && point.count >= 2)) open += 1;
+    for (let index = 0; index < 24; index += 1) {
+      if (!isOwnHomePoint(player, index)) continue;
+      const point = testBoard[index];
+      if (point.owner !== player) continue;
+      homeCheckers += point.count;
+      if (point.count >= 2) madeHomePoints += 1;
+      if (point.count === 1) homeBlots += 1;
     }
-    return open;
+
+    return madeHomePoints * 18 + homeCheckers * 2 - homeBlots * 8;
   }
 
-  function isPointHittableByOpponent(testBoard: Point[], player: Player, pointIndex: number): boolean {
-    const enemy = opponent(player);
-
+  function canPlayerHitPoint(testBoard: Point[], hitter: Player, targetIndex: number, testBar: BarState): boolean {
     for (let die = 1; die <= 6; die += 1) {
-      if (getEntryPoint(enemy, die) === pointIndex) return true;
-
-      const from = enemy === "White" ? pointIndex - die : pointIndex + die;
+      if (testBar[hitter] > 0 && getEntryPoint(hitter, die) === targetIndex) return true;
+      const from = hitter === "White" ? targetIndex - die : targetIndex + die;
       if (from < 0 || from > 23) continue;
-      const point = testBoard[from];
-      if (point.owner === enemy && point.count > 0) return true;
+      if (testBoard[from].owner === hitter && testBoard[from].count > 0) return true;
     }
-
     return false;
   }
 
-  function calculateReturnShotPotential(testBoard: Point[], player: Player): number {
-    const entryBlots = countOpponentBlotsInEntryZone(testBoard, player);
-    const openEntries = countOpenEntryPoints(testBoard, player);
-    const closedPenalty = openEntries <= 1 ? -35 : openEntries === 2 ? -18 : 0;
-
-    return entryBlots * 18 + openEntries * 4 + closedPenalty;
-  }
-
   function scoreAutoTestMove(move: Move): number {
-    const beforePips = calculatePipCount(board, currentPlayer, bar);
-    const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
+    const movingPlayer = currentPlayer;
+    const movingOpponent = opponent(movingPlayer);
+    const enemyControlActive = controlState === "ENEMY_CONTROL" && controller === movingOpponent;
+
+    const beforePips = calculatePipCount(board, movingPlayer, bar);
+    const opponentPips = calculatePipCount(board, movingOpponent, bar);
     const deficit = Math.max(0, beforePips - opponentPips);
-    const beforeBlots = countSingleBlots(board, currentPlayer);
-    const applied = applyMove(board, move, currentPlayer, bar, off);
-    const afterPips = calculatePipCount(applied.board, currentPlayer, applied.bar);
-    const afterBlots = countSingleBlots(applied.board, currentPlayer);
+    const lead = Math.max(0, opponentPips - beforePips);
+    const beforeBlots = countSingleBlots(board, movingPlayer);
+    const beforeMadePoints = countMadePoints(board, movingPlayer);
+    const beforeOpponentHomeStrength = homeBoardStrength(board, movingOpponent);
+    const beforeOwnHomeStrength = homeBoardStrength(board, movingPlayer);
+
+    const applied = applyMove(board, move, movingPlayer, bar, off);
+    const afterPips = calculatePipCount(applied.board, movingPlayer, applied.bar);
+    const afterBlots = countSingleBlots(applied.board, movingPlayer);
+    const afterMadePoints = countMadePoints(applied.board, movingPlayer);
     const pipGain = beforePips - afterPips;
     const landingPoint =
       move.isBearOff || move.to < 0 || move.to > 23 ? null : applied.board[move.to];
 
+    const newBlots = Math.max(0, afterBlots - beforeBlots);
+    const madeNewPoint = afterMadePoints > beforeMadePoints;
+    const createsLandingBlot =
+      landingPoint !== null &&
+      landingPoint.owner === movingPlayer &&
+      landingPoint.count === 1;
+    const inOpponentHome = createsLandingBlot && move.to >= 0 && isOpponentHomePoint(movingPlayer, move.to);
+    const inOwnHome = createsLandingBlot && move.to >= 0 && isOwnHomePoint(movingPlayer, move.to);
+    const exposureCanBeHit = createsLandingBlot && move.to >= 0 && canPlayerHitPoint(applied.board, movingOpponent, move.to, applied.bar);
+    const opponentHomeWeak = beforeOpponentHomeStrength < 45;
+    const opponentHomeModerate = beforeOpponentHomeStrength >= 45 && beforeOpponentHomeStrength < 75;
+    const opponentHomeStrong = beforeOpponentHomeStrength >= 75;
+    const ownHomeStrong = beforeOwnHomeStrength >= 70;
+
+    if (enemyControlActive) {
+      let controlScore = -pipGain * 3;
+      if (move.isBearOff) controlScore -= 120;
+      if (move.isHit) controlScore -= 115;
+      if (move.isBarEntry) controlScore -= 35;
+      controlScore += newBlots * 30;
+      if (createsLandingBlot && exposureCanBeHit) controlScore += 38;
+      if (inOpponentHome && exposureCanBeHit) controlScore += 55;
+      if (madeNewPoint) controlScore -= 30;
+      if (lead >= 24) controlScore += createsLandingBlot ? 10 : 0;
+      controlScore += Math.random() * 8;
+      return controlScore;
+    }
+
     let score = pipGain * 2;
 
-    if (move.isBearOff) score += 80;
-    if (move.isBarEntry) score += 45;
+    if (move.isBearOff) score += lead >= 18 ? 115 : 80;
+    if (move.isBarEntry) score += opponentHomeStrong ? 70 : 45;
     if (move.isHit) score += mode === "WAR" ? 95 : 45;
+    if (madeNewPoint) score += deficit >= 36 ? 32 : 18;
 
     if (autoTestStrategy === "RANDOM_LEGAL") {
       score += Math.random() * 100;
@@ -2455,62 +2445,45 @@ export default function App() {
 
     if (mode === "PEACE" && move.isHit) score -= 40;
 
-    const newBlots = Math.max(0, afterBlots - beforeBlots);
-    const createsLandingBlot =
-      landingPoint !== null &&
-      landingPoint.owner === currentPlayer &&
-      landingPoint.count === 1;
-
     if (autoTestStrategy === "BALANCED") {
       score -= newBlots * 16;
-      if (createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score -= 25;
-      if (deficit >= 40 && createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score += 18;
+      if (createsLandingBlot && exposureCanBeHit) score -= 14;
+      if (inOpponentHome) score -= opponentHomeStrong ? 45 : 20;
+      if (deficit >= 36 && inOpponentHome && !opponentHomeStrong) score += 18;
+      if (lead >= 24 && createsLandingBlot) score -= 18;
     }
 
-    if (autoTestStrategy === "CONTROLLED_COMEBACK") {
-      const landingInMyHome = createsLandingBlot && move.to >= 0 && isPlayerHomeBoard(currentPlayer, move.to);
-      const landingInMyEntryZone = createsLandingBlot && move.to >= 0 && isPlayerEntryZone(currentPlayer, move.to);
-      const landingCanBeHit = createsLandingBlot && move.to >= 0 && isPointHittableByOpponent(applied.board, currentPlayer, move.to);
-      const lateBearingOffPhase =
-        off[currentPlayer] >= 5 ||
-        off[opponent(currentPlayer)] >= 5 ||
-        allHome(board, currentPlayer, bar) ||
-        allHome(board, opponent(currentPlayer), bar);
-      const currentPipGap = Math.abs(beforePips - opponentPips);
-      const runawayRisk = currentPipGap >= 120 || beforePips >= 220 || opponentPips >= 220;
-      const hasAnchor = hasOpponentHomeAnchor(board, currentPlayer);
-      const openEntryPoints = countOpenEntryPoints(board, currentPlayer);
-      const opponentEntryBlots = countOpponentBlotsInEntryZone(board, currentPlayer);
-      const returnShotPotential = calculateReturnShotPotential(board, currentPlayer);
-      const exposureMayBeBait =
-        landingCanBeHit &&
-        deficit >= 50 &&
-        openEntryPoints >= 3 &&
-        (opponentEntryBlots > 0 || returnShotPotential >= 20 || hasAnchor || deficit >= 90);
+    if (autoTestStrategy === "AGGRESSIVE_COMEBACK") {
+      score -= newBlots * 7;
 
-      // Controlled Comeback is now risk-adjusted, not merely reckless.
-      // About one roll in six is a double, so the mode may change soon; a trailing player
-      // may accept exposure, but only when being hit can create return-shot/contact value.
-      score -= newBlots * (lateBearingOffPhase || runawayRisk ? 26 : 14);
-      if (landingInMyHome) score -= lateBearingOffPhase || runawayRisk ? 55 : 18;
-      if (landingInMyEntryZone && deficit < 60) score -= 10;
-
-      if (exposureMayBeBait && !lateBearingOffPhase && !runawayRisk) {
-        score += Math.min(46, 14 + returnShotPotential);
-        if (mode === "WAR") score += 14;
-        if (mode === "PEACE" && deficit >= 70) score += 7;
+      if (deficit >= 36) {
+        if (madeNewPoint) score += 22;
+        if (createsLandingBlot && exposureCanBeHit) score += 18;
+        if (inOpponentHome && exposureCanBeHit && opponentHomeWeak) score += 65;
+        if (inOpponentHome && exposureCanBeHit && opponentHomeModerate) score += 38;
+        if (inOpponentHome && opponentHomeStrong) score -= 48;
+        if (ownHomeStrong && createsLandingBlot && exposureCanBeHit) score += 18;
+        if (mode === "PEACE" && inOpponentHome && exposureCanBeHit && !opponentHomeStrong) score += 28;
       }
 
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 40 && createsLandingBlot && mode === "WAR") score += 8;
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 70 && createsLandingBlot && exposureMayBeBait) score += 12;
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 95 && exposureMayBeBait) score += 16;
+      if (deficit >= 54 && inOpponentHome && exposureCanBeHit && !opponentHomeStrong) score += 22;
 
-      if (deficit < 40 && landingCanBeHit) score -= 28;
-      if (deficit < 60 && newBlots >= 2) score -= 24;
-      if (openEntryPoints <= 2 && landingCanBeHit) score -= 30;
-      if (lateBearingOffPhase && !move.isBearOff && createsLandingBlot) score -= 35;
-      if (runawayRisk && !move.isBearOff && landingCanBeHit) score -= 38;
-      if (runawayRisk && move.isBearOff) score += 35;
+      if (lead >= 18) {
+        score += pipGain;
+        if (move.isBearOff) score += 40;
+        if (createsLandingBlot) score -= 30;
+        if (exposureCanBeHit) score -= 22;
+        if (inOpponentHome) score -= 25;
+      }
+
+      if (lead >= 36) {
+        if (move.isBearOff) score += 35;
+        if (createsLandingBlot) score -= 25;
+        if (move.isHit && mode !== "WAR") score -= 18;
+      }
+
+      if (deficit < 36 && createsLandingBlot && exposureCanBeHit) score -= 18;
+      if (inOwnHome && lead >= 18) score -= 12;
     }
 
     score += Math.random() * 8;
@@ -4242,7 +4215,7 @@ export default function App() {
         >
           <option value="RANDOM_LEGAL">Random Legal</option>
           <option value="BALANCED">Balanced</option>
-          <option value="CONTROLLED_COMEBACK">Controlled Comeback</option>
+          <option value="AGGRESSIVE_COMEBACK">Controlled Comeback</option>
         </select>
 
         <button
@@ -4507,9 +4480,7 @@ export default function App() {
             <div>Avg final margin: {autoTestSummary.averageFinalPipMargin} pips</div>
             <div>Median final margin: {autoTestSummary.medianFinalPipMargin} pips</div>
             <div>Largest final margin: {autoTestSummary.largestFinalPipMargin} pips</div>
-            <div>Avg bear-off margin: {autoTestSummary.averageCheckerMargin} checkers</div>
-            <div>Avg loser off: {autoTestSummary.averageLoserCheckersOff} • Shutouts: {autoTestSummary.shutoutGames}</div>
-            <div>Loser off buckets: 1-5 {autoTestSummary.loserOff1To5} • 6-10 {autoTestSummary.loserOff6To10} • 11-14 {autoTestSummary.loserOff11To14}</div>
+            <div>Avg checker margin: {autoTestSummary.averageCheckerMargin} checkers</div>
             <div>Highest pip count: {autoTestSummary.highestPipCount}</div>
             <div>Largest pip gap: {autoTestSummary.largestPipGap}</div>
             <div>Extreme games: margin 100+ {autoTestSummary.finalMarginsOver100} • pip count 300+ {autoTestSummary.highestPipCountsOver300} • gap 200+ {autoTestSummary.largestPipGapsOver200}</div>
