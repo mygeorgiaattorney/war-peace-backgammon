@@ -1417,6 +1417,10 @@ export default function App() {
   const canEditPlayers = gamePhase === "OPENING_ROLL" && openingDice === null && moveLog.length === 0 && !winner;
   const canChooseDoctrine = gamePhase === "MODE_CHOICE" && awaitingModeChoice && openingDice !== null && openingWinner !== null;
   const canRollOpening = !diceRolling && gamePhase === "OPENING_ROLL" && playersReady;
+  const openingRollAlreadyUsed = gamePhase !== "OPENING_ROLL" || openingDice !== null;
+  const openingChoicePrompt = canChooseDoctrine && openingWinner
+    ? `${openingWinner} won the opening roll. ${openingWinner}, select WAR or PEACE.`
+    : null;
   const turnIsPlayable = gamePhase === "OPENING_TURN" || gamePhase === "NORMAL_TURN";
   const canSubmitTurn =
     !winner &&
@@ -3333,15 +3337,15 @@ export default function App() {
 
     return Array.from({ length: visibleCount }).map((_, index) => {
       const checkerStyle: React.CSSProperties = {
-        width: "clamp(40px, 3.4vw, 52px)",
-        height: "clamp(40px, 3.4vw, 52px)",
+        width: "clamp(42px, 3.55vw, 56px)",
+        height: "clamp(42px, 3.55vw, 56px)",
         borderRadius: "50%",
         background:
           owner === "White"
             ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
             : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
         border: owner === "White" ? "2px solid #f6e6bd" : "2px solid #050505",
-        marginTop: "clamp(-16px, -1vw, -10px)",
+        marginTop: "clamp(-18px, -1.15vw, -12px)",
         zIndex: 10 + index,
         boxShadow:
           "0 9px 13px rgba(0,0,0,0.55)" +
@@ -3420,7 +3424,8 @@ export default function App() {
         style={{
           position: "relative",
           width: "100%",
-          height: "clamp(205px, 31dvh, 300px)",
+          height: "100%",
+          minHeight: 0,
           cursor: isDraggingOrigin ? "grabbing" : isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
           touchAction: "none",
           userSelect: "none",
@@ -3434,7 +3439,7 @@ export default function App() {
             position: "absolute",
             width: "100%",
             maxWidth: "none",
-            height: "clamp(150px, 21dvh, 220px)",
+            height: "clamp(170px, 72%, 255px)",
             top: isTop ? 0 : undefined,
             bottom: isTop ? undefined : 0,
             background: triangleColor,
@@ -3696,6 +3701,7 @@ export default function App() {
         style={{
           width: "clamp(58px, 4.6vw, 68px)",
           minWidth: 58,
+          height: "100%",
           borderRadius: 18,
           background: "linear-gradient(145deg, #5b3219, #1a0904)",
           border: "3px solid #7c461f",
@@ -3761,6 +3767,8 @@ export default function App() {
           gap: 0,
           minWidth: 0,
           width: "100%",
+          height: "100%",
+          minHeight: 0,
         }}
       >
         {points.map((index) => renderPoint(index, isTop))}
@@ -3776,7 +3784,7 @@ export default function App() {
   const modeIsWar = mode === "WAR";
   const enemyControl = controlState === "ENEMY_CONTROL";
   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
-  const shellWidth = "min(calc(100vw - 12px), 1180px)";
+  const shellWidth = "min(calc(100vw - 12px), 1420px)";
   const activeTurnIsWhite = currentPlayer === "White";
   const activeTurnGlowBackground = enemyControl
     ? "linear-gradient(145deg, #ffe76a, #d77b00 58%, #3b1000)"
@@ -4039,6 +4047,16 @@ export default function App() {
           28% { transform: scale(0.98); }
           70% { opacity: 1; transform: scale(1); }
           100% { opacity: 0; transform: scale(1.05) translateY(-26px); }
+        }
+        @keyframes openingRollBlink {
+          0% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 rgba(255,226,138,0); }
+          50% { transform: scale(1.035); filter: brightness(1.22); box-shadow: 0 0 24px rgba(255,226,138,0.88), 0 0 42px rgba(255,178,48,0.48); }
+          100% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 rgba(255,226,138,0); }
+        }
+        @keyframes openingChoiceGlow {
+          0% { box-shadow: 0 0 8px rgba(255,226,138,0.35); }
+          50% { box-shadow: 0 0 24px rgba(255,226,138,0.86), 0 0 32px rgba(40,150,255,0.45); }
+          100% { box-shadow: 0 0 8px rgba(255,226,138,0.35); }
         }
         @keyframes dragPulse {
           0% { filter: brightness(1); }
@@ -4431,6 +4449,9 @@ export default function App() {
           borderRadius: 18,
           border: "clamp(4px, 0.65vw, 7px) solid #2a1408",
           boxShadow: "inset 0 0 0 2px rgba(231,160,72,0.24), inset 0 0 38px rgba(0,0,0,0.65), 0 24px 52px rgba(0,0,0,0.72)",
+          display: "grid",
+          gridTemplateRows: "minmax(0, 1fr) clamp(14px, 1.8dvh, 18px) minmax(0, 1fr)",
+          gap: "3px",
         }}
       >
         <div
@@ -4438,6 +4459,8 @@ export default function App() {
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
             gap: 2,
+            minHeight: 0,
+            height: "100%",
           }}
         >
           <div
@@ -4446,6 +4469,8 @@ export default function App() {
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
               padding: "4px 1px 0",
+              height: "100%",
+              minHeight: 0,
             }}
           >
             <PointQuadrant points={topLeftRow} isTop={true} />
@@ -4458,7 +4483,9 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "7px 5px 0"
+              padding: "4px 1px 0",
+              height: "100%",
+              minHeight: 0
             }}
           >
             <PointQuadrant points={topRightRow} isTop={true} />
@@ -4470,8 +4497,8 @@ export default function App() {
         <div
           aria-hidden="true"
           style={{
-            height: "clamp(14px, 1.8dvh, 18px)",
-            margin: "3px 0",
+            height: "100%",
+            margin: 0,
             borderRadius: 10,
             background: "linear-gradient(90deg, rgba(0,0,0,0.86), rgba(26,38,20,0.95), rgba(0,0,0,0.86))",
             border: "1px solid rgba(255,210,130,0.12)",
@@ -4484,6 +4511,8 @@ export default function App() {
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
             gap: 2,
+            minHeight: 0,
+            height: "100%",
           }}
         >
           <div
@@ -4491,7 +4520,9 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 1px 4px"
+              padding: "0 1px 4px",
+              height: "100%",
+              minHeight: 0
             }}
           >
             <PointQuadrant points={bottomLeftRow} isTop={false} />
@@ -4504,7 +4535,9 @@ export default function App() {
               borderRadius: 18,
               overflow: "hidden",
               background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 1px 4px"
+              padding: "0 1px 4px",
+              height: "100%",
+              minHeight: 0
             }}
           >
             <PointQuadrant points={bottomRightRow} isTop={false} />
@@ -4637,14 +4670,44 @@ export default function App() {
               style={{
                 ...luxuryButton,
                 width: "100%",
-                opacity: canRollOpening ? 1 : 0.45,
+                minHeight: 46,
+                fontSize: "clamp(15px, 1.45vw, 20px)",
+                letterSpacing: 0.9,
+                background: canRollOpening
+                  ? "linear-gradient(145deg, #fff8c8, #ffbd35 50%, #8b4500)"
+                  : luxuryButton.background,
+                color: canRollOpening ? "#160900" : luxuryButton.color,
+                border: canRollOpening ? "3px solid #fff0a4" : luxuryButton.border,
+                opacity: canRollOpening ? 1 : openingRollAlreadyUsed ? 0.16 : 0.45,
                 cursor: canRollOpening ? "pointer" : "not-allowed",
+                animation: canRollOpening ? "openingRollBlink 1s ease-in-out infinite" : "none",
+                pointerEvents: canRollOpening ? "auto" : "none",
               }}
               disabled={!canRollOpening}
               onClick={rollOpening}
+              title={canRollOpening ? "Roll the opening dice now." : openingRollAlreadyUsed ? "Opening roll is complete." : "Choose game type and player names first."}
             >
-              Roll Opening Dice
+              {openingRollAlreadyUsed ? "Opening Dice Rolled" : "Roll Opening Dice"}
             </button>
+
+            {openingChoicePrompt && (
+              <div
+                style={{
+                  background: "linear-gradient(145deg, rgba(255,241,184,0.98), rgba(217,151,40,0.95) 58%, rgba(75,31,0,0.95))",
+                  color: "#1c0b00",
+                  border: "3px solid #fff1a6",
+                  borderRadius: 14,
+                  padding: "8px 9px",
+                  textAlign: "center",
+                  fontSize: "clamp(13px, 1.2vw, 17px)",
+                  fontWeight: 900,
+                  lineHeight: 1.18,
+                  animation: "openingChoiceGlow 1.2s ease-in-out infinite",
+                }}
+              >
+                {openingChoicePrompt}
+              </div>
+            )}
 
             {canChooseDoctrine && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -4788,7 +4851,7 @@ export default function App() {
                 textAlign: "center",
               }}
             >
-              {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : message}
+              {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : openingChoicePrompt ?? message}
               {turnGuidance && !winner && (
                 <div style={{ marginTop: 4, color: "#fff2bc", fontWeight: 900 }}>{turnGuidance}</div>
               )}
