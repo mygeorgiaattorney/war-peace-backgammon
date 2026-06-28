@@ -2538,16 +2538,54 @@ export default function App() {
     return entryBlots * 18 + openEntries * 4 + closedPenalty;
   }
 
+  function getOnePointIndex(player: Player): number {
+    return player === "White" ? 23 : 0;
+  }
+
+  function countCheckersOnOnePoint(testBoard: Point[], player: Player): number {
+    const onePoint = testBoard[getOnePointIndex(player)];
+    return onePoint.owner === player ? onePoint.count : 0;
+  }
+
+  function countDirectShotBlots(testBoard: Point[], player: Player): number {
+    return testBoard.reduce((total, point, index) => {
+      if (point.owner !== player || point.count !== 1) return total;
+      return total + (isPointHittableByOpponent(testBoard, player, index) ? 1 : 0);
+    }, 0);
+  }
+
+  function isLateBearoffRace(testBoard: Point[], testBar: BarState, testOff: OffState, player: Player): boolean {
+    const enemy = opponent(player);
+    const playerAllHome = allHome(testBoard, player, testBar);
+    const enemyAllHome = allHome(testBoard, enemy, testBar);
+    const playerMostlyHomeOrOff = testOff[player] >= 6 || playerAllHome;
+    const enemyMostlyHomeOrOff = testOff[enemy] >= 6 || enemyAllHome;
+
+    return (
+      playerAllHome ||
+      (playerMostlyHomeOrOff && enemyMostlyHomeOrOff) ||
+      (testOff[player] + testOff[enemy] >= 12)
+    );
+  }
+
   function scoreAutoTestMove(move: Move, strategyOverride: AutoTestStrategy = autoTestStrategy): number {
     const activeStrategy = strategyOverride;
     const beforePips = calculatePipCount(board, currentPlayer, bar);
     const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
     const deficit = Math.max(0, beforePips - opponentPips);
     const beforeBlots = countSingleBlots(board, currentPlayer);
+    const beforeOnePointCheckers = countCheckersOnOnePoint(board, currentPlayer);
+    const beforeDirectShotBlots = countDirectShotBlots(board, currentPlayer);
     const applied = applyMove(board, move, currentPlayer, bar, off);
     const afterPips = calculatePipCount(applied.board, currentPlayer, applied.bar);
     const afterBlots = countSingleBlots(applied.board, currentPlayer);
+    const afterOnePointCheckers = countCheckersOnOnePoint(applied.board, currentPlayer);
+    const afterDirectShotBlots = countDirectShotBlots(applied.board, currentPlayer);
     const pipGain = beforePips - afterPips;
+    const onePointReduction = Math.max(0, beforeOnePointCheckers - afterOnePointCheckers);
+    const newDirectShotBlots = Math.max(0, afterDirectShotBlots - beforeDirectShotBlots);
+    const lateBearoffRace = isLateBearoffRace(board, bar, off, currentPlayer);
+    const playerIsBehind = deficit > 0;
     const landingPoint =
       move.isBearOff || move.to < 0 || move.to > 23 ? null : applied.board[move.to];
 
@@ -2556,6 +2594,21 @@ export default function App() {
     if (move.isBearOff) score += 80;
     if (move.isBarEntry) score += 45;
     if (move.isHit) score += mode === "WAR" ? 95 : 45;
+
+    // Late bear-off/race correction:
+    // A trailing computer must not cling to a safe stack on the 1-point.
+    // When behind, speed and clearing the 1-point outrank ordinary blot fear.
+    if (lateBearoffRace && playerIsBehind) {
+      score += pipGain * 8;
+      if (move.isBearOff) score += deficit >= 15 ? 220 : 150;
+      score += onePointReduction * (deficit >= 15 ? 160 : 110);
+      score -= afterOnePointCheckers * (deficit >= 15 ? 28 : 18);
+      score -= newDirectShotBlots * (deficit >= 15 ? 35 : 70);
+
+      if (beforeOnePointCheckers >= 3 && onePointReduction > 0) score += 90;
+      if (beforeOnePointCheckers >= 3 && afterOnePointCheckers === 1) score += 65;
+      if (deficit >= 25 && move.isBearOff) score += 110;
+    }
 
     if (activeStrategy === "RANDOM_LEGAL") {
       score += Math.random() * 100;
