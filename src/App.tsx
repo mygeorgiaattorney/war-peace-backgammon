@@ -2381,6 +2381,55 @@ export default function App() {
     );
   }
 
+  function isPlayerEntryZone(player: Player, pointIndex: number): boolean {
+    return player === "White" ? pointIndex >= 0 && pointIndex <= 5 : pointIndex >= 18 && pointIndex <= 23;
+  }
+
+  function isPlayerHomeBoard(player: Player, pointIndex: number): boolean {
+    return player === "White" ? pointIndex >= 18 && pointIndex <= 23 : pointIndex >= 0 && pointIndex <= 5;
+  }
+
+  function countOpponentBlotsInEntryZone(testBoard: Point[], player: Player): number {
+    const enemy = opponent(player);
+    return testBoard.filter((point, index) =>
+      isPlayerEntryZone(player, index) && point.owner === enemy && point.count === 1
+    ).length;
+  }
+
+  function countOpenEntryPoints(testBoard: Point[], player: Player): number {
+    const enemy = opponent(player);
+    let open = 0;
+    for (let die = 1; die <= 6; die += 1) {
+      const entry = getEntryPoint(player, die);
+      const point = testBoard[entry];
+      if (!(point.owner === enemy && point.count >= 2)) open += 1;
+    }
+    return open;
+  }
+
+  function isPointHittableByOpponent(testBoard: Point[], player: Player, pointIndex: number): boolean {
+    const enemy = opponent(player);
+
+    for (let die = 1; die <= 6; die += 1) {
+      if (getEntryPoint(enemy, die) === pointIndex) return true;
+
+      const from = enemy === "White" ? pointIndex - die : pointIndex + die;
+      if (from < 0 || from > 23) continue;
+      const point = testBoard[from];
+      if (point.owner === enemy && point.count > 0) return true;
+    }
+
+    return false;
+  }
+
+  function calculateReturnShotPotential(testBoard: Point[], player: Player): number {
+    const entryBlots = countOpponentBlotsInEntryZone(testBoard, player);
+    const openEntries = countOpenEntryPoints(testBoard, player);
+    const closedPenalty = openEntries <= 1 ? -35 : openEntries === 2 ? -18 : 0;
+
+    return entryBlots * 18 + openEntries * 4 + closedPenalty;
+  }
+
   function scoreAutoTestMove(move: Move): number {
     const beforePips = calculatePipCount(board, currentPlayer, bar);
     const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
@@ -2419,34 +2468,49 @@ export default function App() {
     }
 
     if (autoTestStrategy === "CONTROLLED_COMEBACK") {
-      const opponentHomeBlot = createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to);
+      const landingInMyHome = createsLandingBlot && move.to >= 0 && isPlayerHomeBoard(currentPlayer, move.to);
+      const landingInMyEntryZone = createsLandingBlot && move.to >= 0 && isPlayerEntryZone(currentPlayer, move.to);
+      const landingCanBeHit = createsLandingBlot && move.to >= 0 && isPointHittableByOpponent(applied.board, currentPlayer, move.to);
       const lateBearingOffPhase =
         off[currentPlayer] >= 5 ||
         off[opponent(currentPlayer)] >= 5 ||
         allHome(board, currentPlayer, bar) ||
         allHome(board, opponent(currentPlayer), bar);
+      const currentPipGap = Math.abs(beforePips - opponentPips);
+      const runawayRisk = currentPipGap >= 120 || beforePips >= 220 || opponentPips >= 220;
       const hasAnchor = hasOpponentHomeAnchor(board, currentPlayer);
+      const openEntryPoints = countOpenEntryPoints(board, currentPlayer);
+      const opponentEntryBlots = countOpponentBlotsInEntryZone(board, currentPlayer);
+      const returnShotPotential = calculateReturnShotPotential(board, currentPlayer);
+      const exposureMayBeBait =
+        landingCanBeHit &&
+        deficit >= 50 &&
+        openEntryPoints >= 3 &&
+        (opponentEntryBlots > 0 || returnShotPotential >= 20 || hasAnchor || deficit >= 90);
 
-      // Controlled Comeback should create volatility only when the player is actually desperate.
-      // It should not throw away a playable race, and it should stop gambling once bear-off has begun.
-      score -= newBlots * (lateBearingOffPhase ? 24 : 12);
-      if (opponentHomeBlot) score -= lateBearingOffPhase ? 55 : 24;
+      // Controlled Comeback is now risk-adjusted, not merely reckless.
+      // About one roll in six is a double, so the mode may change soon; a trailing player
+      // may accept exposure, but only when being hit can create return-shot/contact value.
+      score -= newBlots * (lateBearingOffPhase || runawayRisk ? 26 : 14);
+      if (landingInMyHome) score -= lateBearingOffPhase || runawayRisk ? 55 : 18;
+      if (landingInMyEntryZone && deficit < 60) score -= 10;
 
-      if (!lateBearingOffPhase && deficit >= 40 && createsLandingBlot) score += 10;
-      if (!lateBearingOffPhase && deficit >= 60 && createsLandingBlot) score += 14;
-      if (!lateBearingOffPhase && deficit >= 80 && createsLandingBlot) score += 18;
-
-      if (!lateBearingOffPhase && opponentHomeBlot && deficit >= 60 && (hasAnchor || deficit >= 90)) {
-        score += 22;
+      if (exposureMayBeBait && !lateBearingOffPhase && !runawayRisk) {
+        score += Math.min(46, 14 + returnShotPotential);
+        if (mode === "WAR") score += 14;
+        if (mode === "PEACE" && deficit >= 70) score += 7;
       }
 
-      if (!lateBearingOffPhase && mode === "PEACE" && opponentHomeBlot && deficit >= 80 && hasAnchor) {
-        score += 16;
-      }
+      if (!lateBearingOffPhase && !runawayRisk && deficit >= 40 && createsLandingBlot && mode === "WAR") score += 8;
+      if (!lateBearingOffPhase && !runawayRisk && deficit >= 70 && createsLandingBlot && exposureMayBeBait) score += 12;
+      if (!lateBearingOffPhase && !runawayRisk && deficit >= 95 && exposureMayBeBait) score += 16;
 
-      if (deficit < 40 && opponentHomeBlot) score -= 35;
-      if (deficit < 60 && newBlots >= 2) score -= 18;
-      if (lateBearingOffPhase && !move.isBearOff && createsLandingBlot) score -= 25;
+      if (deficit < 40 && landingCanBeHit) score -= 28;
+      if (deficit < 60 && newBlots >= 2) score -= 24;
+      if (openEntryPoints <= 2 && landingCanBeHit) score -= 30;
+      if (lateBearingOffPhase && !move.isBearOff && createsLandingBlot) score -= 35;
+      if (runawayRisk && !move.isBearOff && landingCanBeHit) score -= 38;
+      if (runawayRisk && move.isBearOff) score += 35;
     }
 
     score += Math.random() * 8;
