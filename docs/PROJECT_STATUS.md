@@ -2,7 +2,7 @@
 
 - **Last reviewed:** October 25, 2026
 - **Owner:** Richard Hobbs
-- **Working version:** 0.1.0 — implemented and verified locally; publication pending
+- **Released version:** 0.1.0 — deployed October 25, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
 
@@ -58,7 +58,7 @@ The July replacement's prose oversimplified PEACE as always requiring an individ
 | --- | --- |
 | Complete-game simulation | **20/20 completed:** 10 Balanced and 10 Aggressive, each in a fresh browser context. 1,267 rolls, 270 captures, 8 Enemy Control triggers, and 21 blocked doubles; no lockups or runtime/diagnostic errors. These are stability checks, not a strength comparison. |
 | Main board in phone portrait | **390 × 844 passed:** 4:3 board, no page overflow or checker overlap. Additional 1366 × 1024 and 768 × 1024 checks passed. Short landscape screens use a compact table with a scrollable control panel. |
-| GitHub update and Pages deployment | **Pending for version 0.1.0.** Update this entry with the release commit and successful deployment result. |
+| GitHub update and Pages deployment | **Released.** [PR #1](https://github.com/mygeorgiaattorney/war-peace-backgammon/pull/1) passed its automated checks and was merged as [`6a451cf`](https://github.com/mygeorgiaattorney/war-peace-backgammon/commit/6a451cfa1161590c1a4f2066cc9deea7a71c0302). [Pages deployment #23](https://github.com/mygeorgiaattorney/war-peace-backgammon/actions/runs/40210318756) completed successfully. The published HTML returned HTTP 200 and the live beta entry screen opened in Chrome. |
 | Actual iPad Safari and audio | Not yet verified on the device. Check touch interaction, audible sound, legibility, and playing feel. |
 
 Browser viewport checks establish layout and interaction in the tested browser; they do not replace the remaining actual-device check.
