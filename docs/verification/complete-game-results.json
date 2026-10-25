@@ -1,0 +1,34 @@
+[
+  {
+    "strategy": "BALANCED",
+    "status": "passed",
+    "games": 10,
+    "elapsedSeconds": 39,
+    "rolls": 658,
+    "captures": 150,
+    "enemyControlTriggers": 3,
+    "enemyControlMoves": 4,
+    "blockedDoubles": 10,
+    "noEntryRolls": 17,
+    "steps": 2137,
+    "runtimeErrors": 0,
+    "whiteWins": 4,
+    "blackWins": 6
+  },
+  {
+    "strategy": "CONTROLLED_COMEBACK",
+    "status": "passed",
+    "games": 10,
+    "elapsedSeconds": 39,
+    "rolls": 609,
+    "captures": 120,
+    "enemyControlTriggers": 5,
+    "enemyControlMoves": 5,
+    "blockedDoubles": 11,
+    "noEntryRolls": 11,
+    "steps": 1975,
+    "runtimeErrors": 0,
+    "whiteWins": 7,
+    "blackWins": 3
+  }
+]
