@@ -1,4 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import GameIntro from "./components/GameIntro";
+import RulesDialog from "./components/RulesDialog";
+import "./game.css";
+
+function readStoredValue(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+function writeStoredValue(key: string, value: string): boolean {
+  try { window.localStorage.setItem(key, value); return true; } catch { return false; }
+}
+
+function removeStoredValue(key: string): void {
+  try { window.localStorage.removeItem(key); } catch { /* Play remains available without browser storage. */ }
+}
 
 type Player = "White" | "Black";
 type Mode = "WAR" | "PEACE";
@@ -82,7 +97,14 @@ type Snapshot = {
 };
 
 type SavedGameState = {
-  version: 1;
+  version: 1 | 2;
+  playSetupMode?: Exclude<PlaySetupMode, "MENU">;
+  computerStrategy?: AutoTestStrategy;
+  whitePlayerName?: string;
+  blackPlayerName?: string;
+  gameRolls?: number;
+  gamePlayableRolls?: number;
+  gameUnplayableRolls?: number;
   savedAt: string;
   board: Point[];
   bar: BarState;
@@ -277,7 +299,7 @@ const PLAYER_RECORDS_KEY = "warPeaceBackgammonPlayerRecordsV1";
 const AUTO_TEST_REPORT_KEY = "warPeaceBackgammonAutoTestReportV1";
 const SAVE_KEY = "warPeaceBackgammonSaveV1";
 const BETA_PASSWORD = "warpeace1776";
-const PUBLIC_SHOW_TESTING_TOOLS = false;
+const PUBLIC_SHOW_TESTING_TOOLS = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("testing") === "1";
 const BETA_ACCESS_KEY = "warPeaceBackgammonBetaAccessV1";
 const AUTO_TEST_SPEED_LABELS: Record<AutoTestSpeed, string> = {
   SLOW: "Slow",
@@ -329,7 +351,7 @@ function createEmptyAutoTestReport(targetGames = 1, stopReason = "Not started.")
 
 function loadAutoTestReport(): AutoTestReport {
   try {
-    const stored = window.localStorage.getItem(AUTO_TEST_REPORT_KEY);
+    const stored = readStoredValue(AUTO_TEST_REPORT_KEY);
     if (!stored) return createEmptyAutoTestReport(1);
     const parsed = JSON.parse(stored) as AutoTestReport;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.games)) return createEmptyAutoTestReport(1);
@@ -340,7 +362,7 @@ function loadAutoTestReport(): AutoTestReport {
 }
 
 function saveAutoTestReport(report: AutoTestReport): void {
-  window.localStorage.setItem(AUTO_TEST_REPORT_KEY, JSON.stringify(report));
+  writeStoredValue(AUTO_TEST_REPORT_KEY, JSON.stringify(report));
 }
 
 function summarizeAutoTestReport(report: AutoTestReport): AutoTestSummary {
@@ -986,15 +1008,17 @@ function getAudioContext(): AudioContext | null {
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioContextClass) return null;
 
-  if (!sharedAudioContext) {
-    sharedAudioContext = new AudioContextClass();
+  try {
+    if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+      sharedAudioContext = new AudioContextClass();
+    }
+    if (sharedAudioContext.state === "suspended") {
+      void sharedAudioContext.resume().catch(() => {});
+    }
+    return sharedAudioContext;
+  } catch {
+    return null;
   }
-
-  if (sharedAudioContext.state === "suspended") {
-    void sharedAudioContext.resume();
-  }
-
-  return sharedAudioContext;
 }
 
 function playTone(
@@ -1086,8 +1110,8 @@ function formatFinalResult(result: FinalResult): string {
 
 function describeMove(move: Move): string {
   if (move.isBearOff) return `Bear off from ${pointLabel(move.from)} with ${move.die}`;
-  if (move.isBarEntry) return `Enter from bar to ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - POW! Captured" : ""}`;
-  return `${pointLabel(move.from)} -> ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - POW! Captured" : ""}`;
+  if (move.isBarEntry) return `Enter from bar to ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - Captured" : ""}`;
+  return `${pointLabel(move.from)} -> ${pointLabel(move.to)} with ${move.die}${move.isHit ? " - Captured" : ""}`;
 }
 
 function describeSequence(sequence: Sequence): string {
@@ -1104,7 +1128,7 @@ function describeSequenceStats(sequence: Sequence): string {
 
 function formatMoveLogEntry(entry: MoveLogEntry): string {
   const tags: string[] = [];
-  if (entry.move.isHit) tags.push("POW! CAPTURED");
+  if (entry.move.isHit) tags.push(entry.mode === "WAR" ? "PRISONER OF WAR" : "PRISONER OF PEACE");
   if (entry.move.isBearOff) tags.push("OFF");
   if (entry.move.isBarEntry) tags.push("BAR");
   if (entry.controlState === "ENEMY_CONTROL") tags.push("ENEMY CONTROL");
@@ -1174,7 +1198,7 @@ function loadPlayerRecordBook(): PlayerRecordBook {
   if (typeof window === "undefined") return createEmptyRecordBook();
 
   try {
-    const raw = window.localStorage.getItem(PLAYER_RECORDS_KEY);
+    const raw = readStoredValue(PLAYER_RECORDS_KEY);
     if (!raw) return createEmptyRecordBook();
 
     const parsed = JSON.parse(raw) as Partial<PlayerRecordBook>;
@@ -1194,7 +1218,7 @@ function loadPlayerRecordBook(): PlayerRecordBook {
 
 function savePlayerRecordBook(book: PlayerRecordBook): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(PLAYER_RECORDS_KEY, JSON.stringify(book));
+  writeStoredValue(PLAYER_RECORDS_KEY, JSON.stringify(book));
 }
 
 function formatWinRate(wins: number, games: number): string {
@@ -1279,15 +1303,17 @@ export default function App() {
   const [blackPlayerName, setBlackPlayerName] = useState("Black Player");
   const [recordBook, setRecordBook] = useState<PlayerRecordBook>(() => loadPlayerRecordBook());
   const [showRecords, setShowRecords] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("warPeaceBackgammonSoundEnabledV1") !== "off");
+  const [soundEnabled, setSoundEnabled] = useState(() => readStoredValue("warPeaceBackgammonSoundEnabledV1") !== "off");
   const [showTestingPanel, setShowTestingPanel] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [saveAvailable, setSaveAvailable] = useState(true);
   const [playSetupMode, setPlaySetupMode] = useState<PlaySetupMode>("MENU");
   const [computerStrategy, setComputerStrategy] = useState<AutoTestStrategy>("BALANCED");
   const [gameRolls, setGameRolls] = useState(0);
   const [gamePlayableRolls, setGamePlayableRolls] = useState(0);
   const [gameUnplayableRolls, setGameUnplayableRolls] = useState(0);
   const [hasSavedGame, setHasSavedGame] = useState(false);
-  const [betaUnlocked, setBetaUnlocked] = useState(() => window.localStorage.getItem(BETA_ACCESS_KEY) === "granted");
+  const [betaUnlocked, setBetaUnlocked] = useState(() => readStoredValue(BETA_ACCESS_KEY) === "granted");
   const [betaPasswordInput, setBetaPasswordInput] = useState("");
   const [betaError, setBetaError] = useState<string | null>(null);
   const [autoTestRunning, setAutoTestRunning] = useState(false);
@@ -1298,6 +1324,12 @@ export default function App() {
   const [autoTestReport, setAutoTestReport] = useState<AutoTestReport>(() => loadAutoTestReport());
   const [autoTestSummary, setAutoTestSummary] = useState<AutoTestSummary>(() => summarizeAutoTestReport(loadAutoTestReport()));
   const dragCompletionGuard = useRef(false);
+  const pendingDragRef = useRef<{ point: number; x: number; y: number } | null>(null);
+  const ignorePointClickUntilRef = useRef(0);
+  const gameEpochRef = useRef(0);
+  const rollLockRef = useRef(false);
+  const diagnosticGameRef = useRef(false);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPassTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoTestStepRef = useRef(0);
   const autoTestGameStepRef = useRef(0);
@@ -1343,15 +1375,15 @@ export default function App() {
   const autoTestBatchResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setHasSavedGame(Boolean(window.localStorage.getItem(SAVE_KEY)));
+    setHasSavedGame(Boolean(readStoredValue(SAVE_KEY)));
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("warPeaceBackgammonSoundEnabledV1", soundEnabled ? "on" : "off");
+    writeStoredValue("warPeaceBackgammonSoundEnabledV1", soundEnabled ? "on" : "off");
   }, [soundEnabled]);
 
   useEffect(() => {
-    console.table(runEngineSelfTests().map((result) => ({ result })));
+    if (PUBLIC_SHOW_TESTING_TOOLS) console.table(runEngineSelfTests().map((result) => ({ result })));
   }, []);
 
   useEffect(() => {
@@ -1407,7 +1439,7 @@ export default function App() {
       })
     : [];
 
-  const displayDice = remainingDice.length > 0 ? remainingDice : openingDice ?? [];
+  const displayDice = awaitingModeChoice ? openingDice ?? [] : remainingDice;
   const cleanWhitePlayerName = normalizePlayerName(whitePlayerName);
   const cleanBlackPlayerName = normalizePlayerName(blackPlayerName);
   const playersReady =
@@ -1429,7 +1461,7 @@ export default function App() {
     !awaitingModeChoice &&
     turnMoveCount > 0 &&
     (remainingDice.length === 0 || legalMoves.length === 0);
-  const canResign = !winner && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
+  const canResign = !winner && !diceRolling && gamePhase !== "OPENING_ROLL" && gamePhase !== "GAME_OVER";
   const autoTestStatus = autoTestError
     ? "Stopped - error found"
     : autoTestRunning
@@ -1455,18 +1487,42 @@ export default function App() {
   const isComputerGame = playSetupMode === "COMPUTER_BALANCED" || playSetupMode === "COMPUTER_AGGRESSIVE";
   const isComputerController = isComputerGame && controller === "Black" && winner === null;
   const setupComplete = playSetupMode !== "MENU";
+  const canUndo = setupComplete && !winner && !diceRolling && !confirmResign && !isComputerController && !autoTestRunning &&
+    history.length > 0 && history[history.length - 1].controller === controller;
+
+  function invalidatePendingActions(): void {
+    gameEpochRef.current += 1;
+    rollLockRef.current = false;
+    pendingDragRef.current = null;
+    setDiceRolling(false);
+    setDraggingPoint(null);
+    setDragPosition(null);
+    setTurnBanner(null);
+    if (autoPassTimerRef.current !== null) clearTimeout(autoPassTimerRef.current);
+    if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
+    if (autoTestBatchResumeTimerRef.current !== null) {
+      clearTimeout(autoTestBatchResumeTimerRef.current);
+      autoTestBatchResumeTimerRef.current = null;
+    }
+  }
 
 
   function startTwoPlayerGame(): void {
+    diagnosticGameRef.current = false;
+    setAutoTestRunning(false);
+    clearSavedGame();
     setPlaySetupMode("TWO_PLAYERS");
     setWhitePlayerName("White Player");
     setBlackPlayerName("Black Player");
     setComputerStrategy("BALANCED");
     resetNewGame();
-    setMessage("Two-player game selected. Enter player names, then roll opening dice.");
+    setMessage("Two-player game ready. Share this screen and roll the opening dice.");
   }
 
   function startComputerGame(strategy: AutoTestStrategy): void {
+    diagnosticGameRef.current = false;
+    setAutoTestRunning(false);
+    clearSavedGame();
     const aggressive = strategy === "CONTROLLED_COMEBACK";
     setPlaySetupMode(aggressive ? "COMPUTER_AGGRESSIVE" : "COMPUTER_BALANCED");
     setComputerStrategy(strategy);
@@ -1477,8 +1533,11 @@ export default function App() {
   }
 
   function backToGameMenu(): void {
+    if (!winner && gamePhase !== "OPENING_ROLL") saveGame(false);
+    invalidatePendingActions();
+    setAutoTestRunning(false);
+    setConfirmResign(false);
     setPlaySetupMode("MENU");
-    resetNewGame();
     setMessage("Choose how you want to play.");
   }
 
@@ -1489,13 +1548,19 @@ export default function App() {
     return Math.random() < 0.5 ? "WAR" : "PEACE";
   }
 
-  async function animateDiceRoll(): Promise<void> {
+  async function animateDiceRoll(): Promise<boolean> {
+    if (rollLockRef.current) return false;
+    const epoch = gameEpochRef.current;
+    rollLockRef.current = true;
     setDiceRolling(true);
     const delay = autoTestRunning ? AUTO_TEST_DICE_DELAY_MS[autoTestSpeed] : 650;
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
+    if (epoch !== gameEpochRef.current) return false;
+    rollLockRef.current = false;
     setDiceRolling(false);
+    return true;
   }
 
   function triggerMoveAnimation(move: Move): void {
@@ -1504,8 +1569,9 @@ export default function App() {
   }
 
   function flashBanner(text: string, duration = 1300): void {
+    if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
     setTurnBanner(text);
-    setTimeout(() => setTurnBanner(null), duration);
+    bannerTimerRef.current = setTimeout(() => setTurnBanner(null), duration);
   }
 
   function soundClick(): void {
@@ -1542,9 +1608,17 @@ export default function App() {
     }, 2200);
   }
 
-  function saveGame(): void {
+  function saveGame(announce = true): void {
+    if (!setupComplete || winner || autoTestRunning || diagnosticGameRef.current) return;
     const savedGame: SavedGameState = {
-      version: 1,
+      version: 2,
+      playSetupMode,
+      computerStrategy,
+      whitePlayerName,
+      blackPlayerName,
+      gameRolls,
+      gamePlayableRolls,
+      gameUnplayableRolls,
       savedAt: new Date().toISOString(),
       board: cloneBoard(board),
       bar: { ...bar },
@@ -1572,32 +1646,84 @@ export default function App() {
       message,
     };
 
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(savedGame));
-    setHasSavedGame(true);
-    setConfirmResign(false);
-    setMessage("Game saved on this computer.");
-    flashBanner("GAME SAVED", 900);
+    try {
+      if (!writeStoredValue(SAVE_KEY, JSON.stringify(savedGame))) throw new Error("Storage unavailable");
+      setHasSavedGame(true);
+      setSaveAvailable(true);
+      if (announce) {
+        setMessage("Progress saved on this device.");
+        flashBanner("GAME SAVED", 900);
+      }
+    } catch {
+      setSaveAvailable(false);
+      if (announce) setMessage("This browser cannot save progress. You can still keep playing.");
+    }
   }
+
+  useEffect(() => {
+    if (setupComplete && !winner && !diceRolling && !autoTestRunning && !diagnosticGameRef.current && gamePhase !== "OPENING_ROLL") {
+      saveGame(false);
+    }
+  }, [board, bar, off, mode, currentPlayer, controller, controlState, gamePhase, remainingDice,
+    moveLog, turnMoveCount, openingDice, openingWinner, awaitingModeChoice, winner, diceRolling,
+    autoTestRunning, playSetupMode, computerStrategy, whitePlayerName, blackPlayerName,
+    gameRolls, gamePlayableRolls, gameUnplayableRolls]);
 
   function isSavedGameState(value: unknown): value is SavedGameState {
     if (!value || typeof value !== "object") return false;
     const candidate = value as Partial<SavedGameState>;
+    const isPlayer = (player: unknown): player is Player => player === "White" || player === "Black";
+    const isDie = (die: unknown): die is number => typeof die === "number" && Number.isInteger(die) && die >= 1 && die <= 6;
+    const validOpening = Array.isArray(candidate.openingDice) && candidate.openingDice.length === 2 &&
+      candidate.openingDice.every(isDie) && candidate.openingDice[0] !== candidate.openingDice[1];
+    if ((candidate.whitePlayerName !== undefined && typeof candidate.whitePlayerName !== "string") ||
+        (candidate.blackPlayerName !== undefined && typeof candidate.blackPlayerName !== "string") ||
+        (candidate.openingDice !== null && !validOpening) ||
+        (candidate.openingWinner !== null && !isPlayer(candidate.openingWinner)) ||
+        (candidate.winner !== null && !isPlayer(candidate.winner)) ||
+        typeof candidate.awaitingModeChoice !== "boolean" ||
+        typeof candidate.openingTurnMoveMade !== "boolean" ||
+        typeof candidate.openingTurnRequiresMove !== "boolean") return false;
+    if (candidate.gamePhase === "MODE_CHOICE" && (!candidate.awaitingModeChoice || !validOpening || !isPlayer(candidate.openingWinner))) return false;
+    if (candidate.gamePhase !== "MODE_CHOICE" && candidate.awaitingModeChoice) return false;
+    if (candidate.gamePhase === "OPENING_TURN" && (!validOpening || candidate.openingWinner !== candidate.currentPlayer)) return false;
+    if (candidate.gamePhase === "NORMAL_TURN" && (candidate.openingDice !== null || candidate.openingWinner !== null)) return false;
+    if ((candidate.gamePhase === "GAME_OVER") !== (candidate.winner !== null)) return false;
+    if (candidate.controlState === "NORMAL" && candidate.controller !== candidate.currentPlayer) return false;
+    if (candidate.controlState === "ENEMY_CONTROL" && (candidate.controller === candidate.currentPlayer || candidate.mode !== "PEACE")) return false;
+    if (candidate.finalResult !== null && candidate.finalResult !== undefined && (
+      !isPlayer(candidate.finalResult.winner) || !isPlayer(candidate.finalResult.loser) ||
+      !["BEAR_OFF", "RESIGNATION"].includes(candidate.finalResult.reason)
+    )) return false;
     return (
-      candidate.version === 1 &&
+      (candidate.version === 1 || candidate.version === 2) &&
       Array.isArray(candidate.board) &&
       candidate.board.length === 24 &&
+      candidate.board.every((point) => point && Number.isInteger(point.count) && point.count >= 0 && point.count <= 15 &&
+        (point.count === 0 ? point.owner === null : point.owner === "White" || point.owner === "Black")) &&
       candidate.bar !== undefined &&
       candidate.off !== undefined &&
+      (["White", "Black"] as const).every((player) => {
+        const barCount = candidate.bar?.[player];
+        const offCount = candidate.off?.[player];
+        return typeof barCount === "number" && Number.isInteger(barCount) && barCount >= 0 && typeof offCount === "number" && Number.isInteger(offCount) && offCount >= 0 &&
+          candidate.board!.reduce((total, point) => total + (point.owner === player ? point.count : 0), 0) + barCount + offCount === 15;
+      }) &&
       (candidate.currentPlayer === "White" || candidate.currentPlayer === "Black") &&
       (candidate.controller === "White" || candidate.controller === "Black") &&
       (candidate.mode === "WAR" || candidate.mode === "PEACE") &&
-      typeof candidate.gamePhase === "string" &&
-      Array.isArray(candidate.remainingDice)
+      (candidate.controlState === "NORMAL" || candidate.controlState === "ENEMY_CONTROL") &&
+      ["OPENING_ROLL", "MODE_CHOICE", "OPENING_TURN", "NORMAL_TURN", "GAME_OVER"].includes(candidate.gamePhase ?? "") &&
+      Array.isArray(candidate.remainingDice) && candidate.remainingDice.length <= 4 &&
+      candidate.remainingDice.every((die) => Number.isInteger(die) && die >= 1 && die <= 6) &&
+      Array.isArray(candidate.moveLog) && candidate.moveLog.every((entry) => entry && entry.move && Array.isArray(entry.remainingDiceAfter)) &&
+      typeof candidate.turnMoveCount === "number" && Number.isInteger(candidate.turnMoveCount) && candidate.turnMoveCount >= 0 &&
+      (candidate.version === 1 || ["TWO_PLAYERS", "COMPUTER_BALANCED", "COMPUTER_AGGRESSIVE"].includes(candidate.playSetupMode ?? ""))
     );
   }
 
   function loadSavedGame(): void {
-    const rawSave = window.localStorage.getItem(SAVE_KEY);
+    const rawSave = readStoredValue(SAVE_KEY);
     if (!rawSave) {
       setHasSavedGame(false);
       setMessage("No saved game found on this computer.");
@@ -1609,6 +1735,18 @@ export default function App() {
       if (!isSavedGameState(parsed)) {
         throw new Error("Saved game format is not valid.");
       }
+
+      invalidatePendingActions();
+      diagnosticGameRef.current = false;
+      setAutoTestRunning(false);
+      setAutoTestError(null);
+      setPlaySetupMode(parsed.playSetupMode ?? "TWO_PLAYERS");
+      setComputerStrategy(parsed.computerStrategy === "CONTROLLED_COMEBACK" ? "CONTROLLED_COMEBACK" : "BALANCED");
+      setWhitePlayerName(parsed.whitePlayerName || "White Player");
+      setBlackPlayerName(parsed.blackPlayerName || "Black Player");
+      setGameRolls(parsed.gameRolls ?? 0);
+      setGamePlayableRolls(parsed.gamePlayableRolls ?? 0);
+      setGameUnplayableRolls(parsed.gameUnplayableRolls ?? 0);
 
       setBoard(cloneBoard(parsed.board));
       setBar({ ...parsed.bar });
@@ -1651,7 +1789,7 @@ export default function App() {
       setHasSavedGame(true);
       flashBanner("GAME LOADED", 900);
     } catch {
-      window.localStorage.removeItem(SAVE_KEY);
+      removeStoredValue(SAVE_KEY);
       setHasSavedGame(false);
       setMessage("Saved game was damaged and has been cleared.");
       flashWarning("Saved game could not be loaded.");
@@ -1659,7 +1797,7 @@ export default function App() {
   }
 
   function clearSavedGame(): void {
-    window.localStorage.removeItem(SAVE_KEY);
+    removeStoredValue(SAVE_KEY);
     setHasSavedGame(false);
     setConfirmResign(false);
     setMessage("Saved game cleared from this computer.");
@@ -1669,7 +1807,7 @@ export default function App() {
     event.preventDefault();
 
     if (betaPasswordInput.trim() === BETA_PASSWORD) {
-      window.localStorage.setItem(BETA_ACCESS_KEY, "granted");
+      writeStoredValue(BETA_ACCESS_KEY, "granted");
       setBetaUnlocked(true);
       setBetaError(null);
       setBetaPasswordInput("");
@@ -1682,7 +1820,7 @@ export default function App() {
   }
 
   function clearBetaAccess(): void {
-    window.localStorage.removeItem(BETA_ACCESS_KEY);
+    removeStoredValue(BETA_ACCESS_KEY);
     setBetaUnlocked(false);
     setBetaPasswordInput("");
     setBetaError(null);
@@ -1790,11 +1928,15 @@ export default function App() {
     finalBar: BarState = bar,
     finalOff: OffState = off
   ): void {
+    invalidatePendingActions();
     const result = buildFinalResult(player, reason, finalBoard, finalBar, finalOff);
 
     setWinner(player);
     setFinalResult(result);
-    if (!autoTestRunning) recordCompletedGame(result);
+    if (!autoTestRunning && !diagnosticGameRef.current) {
+      recordCompletedGame(result);
+      clearSavedGame();
+    }
     setMessage(formatFinalResult(result));
     soundWin();
     flashBanner(`${player.toUpperCase()} WINS`, 3000);
@@ -1825,14 +1967,15 @@ export default function App() {
 
     if (!confirmResign) {
       setConfirmResign(true);
-      setMessage(`${currentPlayer}, click Confirm Resign to forfeit the game.`);
+      setMessage(`${isComputerGame ? "White" : currentPlayer}, confirm resignation to forfeit this game.`);
       return;
     }
 
-    endGame(opponent(currentPlayer), "RESIGNATION", board, bar, off);
+    endGame(opponent(isComputerGame ? "White" : currentPlayer), "RESIGNATION", board, bar, off);
   }
 
   function resetNewGame(): void {
+    invalidatePendingActions();
     setBoard(createStartingBoard());
     setGameRolls(0);
     setGamePlayableRolls(0);
@@ -1899,7 +2042,7 @@ export default function App() {
     }
 
     setMessage("Rolling opening dice...");
-    await animateDiceRoll();
+    if (!(await animateDiceRoll())) return;
     if (soundEnabled) playDiceSound();
 
     let whiteDie = rollDie();
@@ -2003,8 +2146,8 @@ export default function App() {
     setMessage("PEACE TEST: no-hit sequence should be preferred if available.");
   }
 
-  function chooseMode(chosenMode: Mode): void {
-    if (isComputerController && openingWinner !== "Black") { setMessage("Computer is thinking."); return; }
+  function chooseMode(chosenMode: Mode, automated = false): void {
+    if (isComputerController && !automated) { setMessage("Computer is thinking."); return; }
 
     if (!awaitingModeChoice || !openingDice || !openingWinner) {
       setMessage("Roll opening dice first, then choose WAR or PEACE.");
@@ -2034,7 +2177,8 @@ export default function App() {
   }
 
   async function nextTurn(): Promise<void> {
-    await animateDiceRoll();
+    if (!setupComplete || winner !== null || confirmResign) return;
+    if (!(await animateDiceRoll())) return;
     if (soundEnabled) playDiceSound();
 
     const nextPlayer = opponent(currentPlayer);
@@ -2100,7 +2244,7 @@ export default function App() {
   }
 
   function undoMove(): void {
-    if (history.length === 0) return;
+    if (!canUndo || rollLockRef.current) return;
 
     const previous = history[history.length - 1];
     setBoard(previous.board);
@@ -2121,6 +2265,7 @@ export default function App() {
   }
 
   function submitTurn(): void {
+    if (confirmResign) return;
     if (gamePhase === "OPENING_ROLL") {
       setMessage("Roll opening dice first.");
       return;
@@ -2163,6 +2308,7 @@ export default function App() {
   }
 
   function executeMove(move: Move): void {
+    if (winner !== null || confirmResign || rollLockRef.current || !setupComplete || !legalMoves.some((legal) => moveKey(legal) === moveKey(move))) return;
     setHistory((currentHistory) => [
       ...currentHistory,
       {
@@ -2266,7 +2412,7 @@ export default function App() {
     triggerMoveAnimation(move);
 
     if (peaceViolationTriggersEnemyControl) flashBanner("PEACE VIOLATION - ENEMY CONTROL", 2200);
-    else if (move.isHit) flashBanner("POW! CAPTURED", 1300);
+    else if (move.isHit) flashBanner(mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace", 1500);
     if (move.isBearOff) flashBanner("BEAR OFF");
 
     const completedWinner = checkForWinner(result.off);
@@ -2693,7 +2839,8 @@ export default function App() {
     let bestScore = Number.NEGATIVE_INFINITY;
 
     for (const move of candidateMoves) {
-      const score = scoreAutoTestMove(move, strategyOverride);
+      const moverUtility = scoreAutoTestMove(move, strategyOverride);
+      const score = controller === currentPlayer ? moverUtility : -moverUtility;
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -2855,7 +3002,7 @@ export default function App() {
       autoTestCurrentStartModeRef.current = chosenMode;
       autoTestCurrentOpeningWinnerRef.current = openingWinner;
       appendAutoTestLog(`${openingWinner ?? "Opening winner"} chooses ${chosenMode}.`);
-      chooseMode(chosenMode);
+      chooseMode(chosenMode, true);
       return;
     }
 
@@ -2883,6 +3030,8 @@ export default function App() {
   }
 
   function startAutoTest(targetGames = 1): void {
+    diagnosticGameRef.current = true;
+    setPlaySetupMode("TWO_PLAYERS");
     setAutoTestError(null);
     setAutoTestLog([]);
     resetAutoTestCounters(targetGames);
@@ -2918,88 +3067,79 @@ export default function App() {
   }
 
   function stepAutoTestOnce(): void {
+    diagnosticGameRef.current = true;
     setAutoTestError(null);
     appendAutoTestLog("Manual auto-test step.");
     runAutoTestStep();
   }
 
+
   function beginDrag(index: number, event?: React.PointerEvent<HTMLDivElement>): void {
-    if (isComputerController) { setMessage("Computer is thinking."); return; }
-    if (awaitingModeChoice || remainingDice.length === 0 || bar[currentPlayer] > 0) return;
-
-    const point = board[index];
-    const canDragFromPoint = point.owner === currentPlayer && legalMoves.some((move) => move.from === index);
-
-    if (!canDragFromPoint) return;
-
-    event?.preventDefault();
-    event?.currentTarget.setPointerCapture?.(event.pointerId);
-    dragCompletionGuard.current = false;
-    setDraggingPoint(index);
-    setSelectedPoint(index);
-    setPreviewMoveKey(null);
-    setDragPosition(event ? { x: event.clientX, y: event.clientY } : null);
-    setMessage(`Dragging from point ${index + 1}. Release on a highlighted destination.`);
+    if (!event || !setupComplete || winner || diceRolling || confirmResign || isComputerController || autoTestRunning || awaitingModeChoice || bar[currentPlayer] > 0) return;
+    if (board[index].owner !== currentPlayer || !legalMoves.some((move) => move.from === index)) return;
+    pendingDragRef.current = { point: index, x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   }
 
   function finishDragAt(clientX: number, clientY: number): void {
+    pendingDragRef.current = null;
     if (draggingPoint === null || dragCompletionGuard.current) return;
     dragCompletionGuard.current = true;
-
-    const elementUnderPointer = document.elementFromPoint(clientX, clientY);
-    const pointElement = elementUnderPointer?.closest("[data-point-index]") as HTMLElement | null;
-    const dropIndexText = pointElement?.dataset.pointIndex;
-    const dropIndex = dropIndexText === undefined ? null : Number(dropIndexText);
-
-    const move = legalMoves.find((candidate) => {
-      if (dropIndex === null || Number.isNaN(dropIndex)) return false;
-      if (candidate.isBearOff) return candidate.from === draggingPoint && dropIndex === draggingPoint;
-      return candidate.from === draggingPoint && candidate.to === dropIndex;
-    });
-
-    const sourcePoint = draggingPoint;
+    ignorePointClickUntilRef.current = performance.now() + 250;
+    const element = document.elementFromPoint(clientX, clientY);
+    const tray = element?.closest("[data-bear-off-player]") as HTMLElement | null;
+    const point = element?.closest("[data-point-index]") as HTMLElement | null;
+    const dropIndex = point?.dataset.pointIndex === undefined ? null : Number(point.dataset.pointIndex);
+    const move = legalMoves.find((candidate) => candidate.from === draggingPoint && (
+      candidate.isBearOff ? tray?.dataset.bearOffPlayer === currentPlayer : candidate.to === dropIndex
+    ));
+    const source = draggingPoint;
     setDraggingPoint(null);
     setHoverPoint(null);
     setDragPosition(null);
-
-    if (!move) {
-      setSelectedPoint(sourcePoint);
-      setPreviewMoveKey(null);
-      showLegalMoveHelp(sourcePoint);
-      setMessage("Not permitted — must make a legal move.");
-      return;
+    if (move) { executeMove(move); return; }
+    setSelectedPoint(source);
+    if (dropIndex !== source) {
+      showLegalMoveHelp(source);
+      setMessage("Choose a highlighted destination, or drop a home checker into its OFF tray.");
     }
-
-    executeMove(move);
   }
 
   function finishDrag(event: React.PointerEvent<HTMLDivElement>): void {
+    pendingDragRef.current = null;
+    if (draggingPoint === null) return;
     event.preventDefault();
     finishDragAt(event.clientX, event.clientY);
   }
 
   function cancelDrag(): void {
-    if (draggingPoint === null) return;
+    pendingDragRef.current = null;
     setDraggingPoint(null);
     setHoverPoint(null);
     setDragPosition(null);
   }
 
   function updateDragPosition(event: React.PointerEvent<HTMLDivElement>): void {
-    if (draggingPoint === null) return;
+    const pending = pendingDragRef.current;
+    if (draggingPoint === null) {
+      if (!pending || Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < 8) return;
+      event.preventDefault();
+      dragCompletionGuard.current = false;
+      setDraggingPoint(pending.point);
+      setSelectedPoint(pending.point);
+      setPreviewMoveKey(null);
+      setDragPosition({ x: event.clientX, y: event.clientY });
+      return;
+    }
     event.preventDefault();
     updateDragPositionAt(event.clientX, event.clientY);
   }
 
   function updateDragPositionAt(clientX: number, clientY: number): void {
     if (draggingPoint === null) return;
-
     setDragPosition({ x: clientX, y: clientY });
-
-    const elementUnderPointer = document.elementFromPoint(clientX, clientY);
-    const pointElement = elementUnderPointer?.closest("[data-point-index]") as HTMLElement | null;
-    const hoverIndexText = pointElement?.dataset.pointIndex;
-    setHoverPoint(hoverIndexText === undefined ? null : Number(hoverIndexText));
+    const element = document.elementFromPoint(clientX, clientY)?.closest("[data-point-index]") as HTMLElement | null;
+    setHoverPoint(element?.dataset.pointIndex === undefined ? null : Number(element.dataset.pointIndex));
   }
 
   useEffect(() => {
@@ -3041,6 +3181,7 @@ export default function App() {
     }
 
     const shouldAutoPassNoMoveTurn =
+      setupComplete && !showRules && !confirmResign &&
       winner === null &&
       !diceRolling &&
       turnIsPlayable &&
@@ -3069,7 +3210,7 @@ export default function App() {
         autoPassTimerRef.current = null;
       }
     };
-  }, [awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner, autoTestRunning, autoTestSpeed]);
+  }, [setupComplete, showRules, confirmResign, awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner, autoTestRunning, autoTestSpeed]);
 
   useEffect(() => {
     if (!autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
@@ -3105,7 +3246,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
+    if (!setupComplete || showRules || confirmResign || autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
     if (!isComputerController || winner !== null) return;
 
     const delay = remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0 ? 1150 : 650;
@@ -3115,7 +3256,7 @@ export default function App() {
       if (canChooseDoctrine && openingWinner === "Black") {
         const chosenMode = chooseComputerOpeningMode();
         setMessage(`Computer chooses ${chosenMode}.`);
-        chooseMode(chosenMode);
+        chooseMode(chosenMode, true);
         return;
       }
 
@@ -3134,6 +3275,9 @@ export default function App() {
 
     return () => window.clearTimeout(timer);
   }, [
+    setupComplete,
+    showRules,
+    confirmResign,
     autoTestRunning,
     autoTestError,
     diceRolling,
@@ -3159,6 +3303,7 @@ export default function App() {
   ]);
 
   function handlePointClick(index: number): void {
+    if (performance.now() < ignorePointClickUntilRef.current || !setupComplete || diceRolling || confirmResign || autoTestRunning) return;
     if (isComputerController) { setMessage("Computer is thinking."); return; }
 
     const completedWinner = winner ?? checkForWinner(off);
@@ -3214,6 +3359,11 @@ export default function App() {
     });
 
     if (!move) {
+      if (board[index].owner === currentPlayer && legalMoves.some((candidate) => candidate.from === index)) {
+        setSelectedPoint(index === selectedPoint ? null : index);
+        setAssistSourcePoint(null);
+        return;
+      }
       setPreviewMoveKey(null);
       showLegalMoveHelp(selectedPoint);
       setMessage("Not permitted — must make a legal move.");
@@ -3224,6 +3374,7 @@ export default function App() {
   }
 
   function handleBearOffTrayClick(player: Player): void {
+    if (isComputerController || diceRolling || confirmResign || autoTestRunning || !setupComplete) return;
     if (player !== currentPlayer || remainingDice.length === 0 || awaitingModeChoice || winner !== null) return;
 
     const bearOffMove = selectedPoint === null
@@ -3252,67 +3403,12 @@ export default function App() {
     return currentPlayer;
   }
 
+
   function renderDie(value: number, index: number) {
-    const dieOwner = getDieOwnerForDisplay(value, index);
-
-    const dotPositions: Record<number, string[]> = {
-      1: ["center"],
-      2: ["top-left", "bottom-right"],
-      3: ["top-left", "center", "bottom-right"],
-      4: ["top-left", "top-right", "bottom-left", "bottom-right"],
-      5: ["top-left", "top-right", "center", "bottom-left", "bottom-right"],
-      6: ["top-left", "top-right", "mid-left", "mid-right", "bottom-left", "bottom-right"],
-    };
-
-    const positions: Record<string, React.CSSProperties> = {
-      "top-left": { top: 7, left: 7 },
-      "top-right": { top: 7, right: 7 },
-      "mid-left": { top: 18, left: 7 },
-      "mid-right": { top: 18, right: 7 },
-      center: { top: 18, left: 18 },
-      "bottom-left": { bottom: 7, left: 7 },
-      "bottom-right": { bottom: 7, right: 7 },
-    };
-
+    const spots: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
     return (
-      <div
-        key={index}
-        style={{
-          width: 44,
-          height: 44,
-          borderRadius: 16,
-          background:
-            dieOwner === "Black"
-              ? "linear-gradient(145deg, #343434, #050505 72%, #000)"
-              : "linear-gradient(145deg, #fff9df, #d0bd8d)",
-          border:
-            dieOwner === "Black"
-              ? "2px solid #111"
-              : "2px solid #ead9a8",
-          boxShadow:
-            dieOwner === "Black"
-              ? "inset -5px -5px 9px rgba(0,0,0,0.5), inset 4px 4px 7px rgba(255,255,255,0.16), 0 4px 10px rgba(0,0,0,0.5)"
-              : "inset -5px -5px 9px rgba(0,0,0,0.24), inset 4px 4px 7px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.5)",
-          position: "relative",
-          marginRight: 10,
-        }}
-      >
-        {dotPositions[value].map((position, dotIndex) => (
-          <div
-            key={dotIndex}
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background:
-                dieOwner === "Black"
-                  ? "#f7f1df"
-                  : "#111",
-              position: "absolute",
-              ...positions[position],
-            }}
-          />
-        ))}
+      <div key={index} className={"game-die " + (getDieOwnerForDisplay(value, index) === "White" ? "die-light" : "die-dark")} aria-label={"Die " + value}>
+        {Array.from({ length: 9 }, (_, spot) => <span key={spot} className={spots[value].includes(spot) ? "die-pip" : ""} />)}
       </div>
     );
   }
@@ -3325,455 +3421,68 @@ export default function App() {
     return "radial-gradient(circle, #7de2ff 0%, #006d9c 75%)";
   }
 
-  function renderCheckers(
-    owner: Player,
-    count: number,
-    wasLastMoveFrom: boolean,
-    wasLastMoveTo: boolean,
-    isPreviewDestination: boolean,
-    hideTopChecker = false
-  ) {
-    const visibleCount = hideTopChecker ? Math.max(0, Math.min(count, 5) - 1) : Math.min(count, 5);
-
-    return Array.from({ length: visibleCount }).map((_, index) => {
-      const checkerStyle: React.CSSProperties = {
-        width: "clamp(42px, 3.55vw, 56px)",
-        height: "clamp(42px, 3.55vw, 56px)",
-        borderRadius: "50%",
-        background:
-          owner === "White"
-            ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
-            : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
-        border: owner === "White" ? "2px solid #f6e6bd" : "2px solid #050505",
-        marginTop: "clamp(-18px, -1.15vw, -12px)",
-        zIndex: 10 + index,
-        boxShadow:
-          "0 9px 13px rgba(0,0,0,0.55)" +
-          (wasLastMoveTo
-            ? ", 0 0 22px rgba(0,255,120,0.9)"
-            : wasLastMoveFrom
-            ? ", 0 0 18px rgba(255,210,0,0.7)"
-            : ""),
-        transition: "transform 0.18s ease, box-shadow 0.22s ease",
-        transform: wasLastMoveTo
-          ? "translateY(-4px) scale(1.1)"
-          : isPreviewDestination
-          ? "scale(1.05)"
-          : animatingMoveKey
-          ? "scale(1.02)"
-          : "scale(1)",
-      };
-
-      return <div key={index} style={checkerStyle} />;
-    });
-  }
 
   function renderPoint(index: number, isTop: boolean) {
     const point = board[index];
+    const source = draggingPoint ?? selectedPoint ?? assistSourcePoint;
     const isSelected = selectedPoint === index;
-    const isDraggingOrigin = draggingPoint === index;
-    const isDragHover = hoverPoint === index;
-    const legalOrigins = legalOriginPoints;
-    const isLegalOrigin = selectedPoint === null && legalOrigins.includes(index);
-    const activeSource = draggingPoint ?? selectedPoint ?? assistSourcePoint;
-    const legalDestinations =
-      bar[currentPlayer] > 0
-        ? legalMoves.filter((move) => move.isBarEntry).map((move) => move.to)
-        : activeSource !== null
-        ? legalMoves
-            .filter((move) => move.from === activeSource)
-            .map((move) => (move.isBearOff ? activeSource : move.to))
-        : legalHelpActive
-        ? legalMoves.map((move) => (move.isBearOff ? move.from : move.to))
-        : [];
-
-    const isLegalDestination = legalDestinations.includes(index);
-    const legalDestinationMove = legalMoves.find((move) => {
-      if (bar[currentPlayer] > 0) return move.isBarEntry && move.to === index;
-      if (activeSource !== null) {
-        if (move.isBearOff) return move.from === activeSource && index === activeSource;
-        return move.from === activeSource && move.to === index;
-      }
-      if (!legalHelpActive) return false;
-      if (move.isBearOff) return move.from === index;
-      return move.to === index;
-    });
-    const isBearOffDestination = !!legalDestinationMove?.isBearOff;
-    const triangleColor =
-      index % 2 === 0
-        ? "linear-gradient(180deg, #ead7a1 0%, #c9a05b 56%, #7b5a24 100%)"
-        : "linear-gradient(180deg, #8f3d1f 0%, #b65425 48%, #4d1d0b 100%)";
-
-    const previewedMoves = previewMoveKey ? legalMoves.filter((move) => moveKey(move) === previewMoveKey) : [];
-    const isPreviewOrigin = previewedMoves.some((move) => move.from === index);
-    const isPreviewDestination = previewedMoves.some((move) => (move.isBearOff ? move.from : move.to) === index);
-    const wasLastMoveFrom = lastMove?.from === index;
-    const wasLastMoveTo = !!lastMove && !lastMove.isBearOff && lastMove.to === index;
-
+    const isOrigin = !isComputerController && !diceRolling && !winner && legalOriginPoints.includes(index);
+    const destination = !isComputerController && !diceRolling && !winner && legalMoves.find((move) =>
+      bar[currentPlayer] > 0 ? move.isBarEntry && move.to === index :
+      source !== null ? move.from === source && !move.isBearOff && move.to === index :
+      legalHelpActive && !move.isBearOff && move.to === index
+    );
+    const visibleCount = Math.min(point.count, 5) - (draggingPoint === index ? 1 : 0);
     return (
-      <div
-        key={index}
-        data-point-index={index}
+      <div key={index} data-point-index={index} data-selected={isSelected} data-legal-origin={isOrigin}
+        data-legal-destination={Boolean(destination)} role="button" tabIndex={setupComplete ? 0 : -1}
+        aria-label={"Point " + (index + 1) + ": " + (point.owner ? point.count + " " + point.owner + " checkers" : "empty") + (destination ? ", legal destination" : isOrigin ? ", available to move" : "")}
+        aria-pressed={isSelected}
         onClick={() => handlePointClick(index)}
+        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handlePointClick(index); } }}
         onPointerDown={(event) => beginDrag(index, event)}
-        onPointerEnter={() => setHoverPoint(index)}
-        onPointerLeave={() => setHoverPoint(null)}
-        onPointerUp={(event) => finishDrag(event)}
-        onPointerMove={updateDragPosition}
-        onPointerCancel={cancelDrag}
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          minHeight: 0,
-          cursor: isDraggingOrigin ? "grabbing" : isLegalOrigin || isLegalDestination || isSelected ? "grab" : "pointer",
-          touchAction: "none",
-          userSelect: "none",
-          display: "flex",
-          flexDirection: isTop ? "column" : "column-reverse",
-          alignItems: "center",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            width: "100%",
-            maxWidth: "none",
-            height: "clamp(170px, 72%, 255px)",
-            top: isTop ? 0 : undefined,
-            bottom: isTop ? undefined : 0,
-            background: triangleColor,
-            clipPath: isTop ? "polygon(0 0, 100% 0, 50% 100%)" : "polygon(50% 0, 0 100%, 100% 100%)",
-            outline: "none",
-            filter:
-              isSelected || isDraggingOrigin || isDragHover || isLegalOrigin || isLegalDestination || isPreviewOrigin || isPreviewDestination
-                ? "brightness(1.22) saturate(1.14)"
-                : "none",
-            boxShadow: isDraggingOrigin
-              ? "0 0 0 4px rgba(255,255,255,0.95), 0 0 28px rgba(255,255,255,0.65)"
-              : isDragHover && isLegalDestination
-              ? "0 0 0 5px rgba(0,255,180,1), 0 0 30px rgba(0,255,180,0.85)"
-              : isSelected
-              ? "0 0 0 4px rgba(76,255,76,0.98), 0 0 24px rgba(76,255,76,0.75)"
-              : isLegalDestination
-              ? legalHelpActive
-                ? "0 0 0 6px rgba(0,255,200,1), 0 0 34px rgba(0,220,255,0.95)"
-                : "0 0 0 4px rgba(0,200,255,0.98), 0 0 24px rgba(0,200,255,0.75)"
-              : isLegalOrigin
-              ? legalHelpActive
-                ? "0 0 0 5px rgba(255,235,80,1), 0 0 30px rgba(255,215,0,0.9)"
-                : "0 0 0 3px rgba(255,215,0,0.95), 0 0 20px rgba(255,215,0,0.7)"
-              : isPreviewOrigin
-              ? "0 0 0 3px rgba(255,210,0,0.95), 0 0 18px rgba(255,210,0,0.65)"
-              : isPreviewDestination
-              ? "0 0 0 3px rgba(0,200,255,0.95), 0 0 18px rgba(0,200,255,0.65)"
-              : "none",
-            transition: "filter 0.18s ease, box-shadow 0.18s ease",
-          }}
-        />
-
-        <div
-          style={{
-            position: "relative",
-            zIndex: 20,
-            display: "flex",
-            flexDirection: isTop ? "column" : "column-reverse",
-            alignItems: "center",
-            marginTop: isTop ? 4 : 0,
-            marginBottom: isTop ? 0 : 4,
-          }}
-        >
-          {isLegalDestination && (activeSource !== null || legalHelpActive) && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 3,
-                marginBottom: isTop ? 0 : 4,
-                marginTop: isTop ? 4 : 0,
-              }}
-            >
-              <div
-                style={{
-                  width: "clamp(22px, 2.2vw, 32px)",
-                  height: "clamp(22px, 2.2vw, 32px)",
-                  borderRadius: "50%",
-                  background: isBearOffDestination ? "radial-gradient(circle, #ffe98a 0%, #b56a00 75%)" : moveDestinationColor(point, currentPlayer),
-                  border: "3px solid rgba(255,255,255,0.92)",
-                  boxShadow: legalHelpActive ? "0 0 24px rgba(0,255,200,1)" : "0 0 18px rgba(0,200,255,0.95)",
-                }}
-              />
-              {isBearOffDestination && (
-                <div
-                  style={{
-                    background: "rgba(20,8,0,0.86)",
-                    color: "#ffe28a",
-                    border: "1px solid rgba(255,226,138,0.72)",
-                    borderRadius: 999,
-                    padding: "2px 5px",
-                    fontSize: "clamp(8px, 0.75vw, 10px)",
-                    fontWeight: 900,
-                    letterSpacing: 0.5,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  OFF
-                </div>
-              )}
-            </div>
-          )}
-          {point.owner &&
-            renderCheckers(
-              point.owner,
-              point.count,
-              !!wasLastMoveFrom,
-              !!wasLastMoveTo,
-              isPreviewDestination || isLegalDestination || isDraggingOrigin,
-              isDraggingOrigin
-            )}
-          {point.count > 5 && (
-            <div
-              style={{
-                background: "white",
-                color: "black",
-                padding: "2px 6px",
-                borderRadius: 16,
-                fontSize: 12,
-                marginTop: 4,
-              }}
-            >
-              +{point.count - 5}
-            </div>
-          )}
+        onPointerMove={updateDragPosition} onPointerUp={finishDrag} onPointerCancel={cancelDrag}
+        className={"board-point " + (isTop ? "point-top" : "point-bottom") + (isSelected ? " point-selected" : "") + (destination ? " point-destination" : "") + (hoverPoint === index && destination ? " point-hover" : "")}>
+        <span className={"point-triangle " + (index % 2 === 0 ? "point-ivory" : "point-copper")} aria-hidden="true" />
+        <span className="point-number" aria-hidden="true">{index + 1}</span>
+        <div className="checker-stack" aria-hidden="true">
+          {Array.from({ length: Math.max(0, visibleCount) }, (_, n) =>
+            <span key={n} className={"board-checker " + (point.owner === "White" ? "checker-light" : "checker-dark") +
+              (lastMove?.to === index && n === visibleCount - 1 ? " checker-arrived" : "")}>
+              {n === visibleCount - 1 && point.count > 5 && <span className="checker-count">{point.count}</span>}
+            </span>)}
         </div>
-      </div>
-    );
-  }
-
-  function PipPanel({ label, value, light }: { label: string; value: number; light?: boolean }) {
-    const shortLabel = label.includes("WHITE") ? "WHITE" : "BLACK";
-
-    return (
-      <div
-        style={{
-          background: light
-            ? "linear-gradient(145deg, #fff4ca, #c99137 58%, #6f3d09)"
-            : "linear-gradient(145deg, #251811, #050302 70%, #000)",
-          color: light ? "#16100a" : "#f6d58b",
-          border: "3px solid #b47a2a",
-          borderRadius: 14,
-          padding: "7px 12px",
-          minWidth: 112,
-          minHeight: 58,
-          textAlign: "center",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.32), 0 7px 16px rgba(0,0,0,0.42)",
-        }}
-      >
-        <div style={{ fontSize: "clamp(13px, 1.15vw, 16px)", fontWeight: 900, letterSpacing: 1.2 }}>{shortLabel}</div>
-        <div style={{ fontSize: "clamp(26px, 2.45vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{value}</div>
-      </div>
-    );
-  }
-
-  function CombinedPipPanel() {
-    return (
-      <div
-        style={{
-          background: "linear-gradient(145deg, #2b1a10, #050302 72%, #000)",
-          color: "#f6d58b",
-          border: "3px solid #b47a2a",
-          borderRadius: 16,
-          padding: "7px 12px",
-          minWidth: 220,
-          minHeight: 58,
-          textAlign: "center",
-          display: "grid",
-          gridTemplateColumns: "1fr 1px 1fr",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.32), 0 7px 16px rgba(0,0,0,0.42)",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: "clamp(14px, 1.2vw, 17px)", fontWeight: 900, letterSpacing: 1.4 }}>WHITE</div>
-          <div style={{ fontSize: "clamp(26px, 2.35vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{whitePipCount}</div>
-        </div>
-
-        <div
-          style={{
-            width: 1,
-            height: "80%",
-            background: "linear-gradient(180deg, transparent, #d6a847, transparent)",
-          }}
-        />
-
-        <div>
-          <div style={{ fontSize: "clamp(14px, 1.2vw, 17px)", fontWeight: 900, letterSpacing: 1.4 }}>BLACK</div>
-          <div style={{ fontSize: "clamp(26px, 2.35vw, 34px)", fontWeight: 900, lineHeight: 1 }}>{blackPipCount}</div>
-        </div>
-      </div>
-    );
-  }
-
-  function GameFlowPanel() {
-    return (
-      <div
-        style={{
-          background: "linear-gradient(145deg, #21140c, #050302 72%, #000)",
-          color: "#f6d58b",
-          border: "2px solid rgba(180,122,42,0.9)",
-          borderRadius: 16,
-          padding: "6px 10px",
-          minHeight: 46,
-          textAlign: "center",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 5,
-          alignItems: "center",
-          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.22), 0 7px 16px rgba(0,0,0,0.32)",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>ROLLS</div>
-          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gameRolls}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>PLAYABLE</div>
-          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gamePlayableRolls}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.9 }}>PASSES</div>
-          <div style={{ fontSize: "clamp(18px, 1.7vw, 24px)", fontWeight: 900 }}>{gameUnplayableRolls}</div>
-        </div>
+        {destination && <span className={"destination-mark " + (destination.isHit ? "destination-capture" : "")} aria-hidden="true" />}
+        {isOrigin && selectedPoint === null && <span className="origin-mark" aria-hidden="true" />}
       </div>
     );
   }
 
 
-  function TrayCheckers({ player, count }: { player: Player; count: number }) {
-    const checkerStyle = (index: number): React.CSSProperties => ({
-      width: "clamp(22px, 2vw, 28px)",
-      height: "clamp(22px, 2vw, 28px)",
-      borderRadius: "50%",
-      marginTop: index === 0 ? 0 : -7,
-      background:
-        player === "White"
-          ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 35%, #8a744a 100%)"
-          : "radial-gradient(circle at 32% 24%, #777 0%, #222 45%, #000 100%)",
-      border: player === "White" ? "2px solid #f6e6bd" : "2px solid #050505",
-      boxShadow: "0 7px 10px rgba(0,0,0,0.55)",
-      zIndex: 20 + index,
-    });
-
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 58,
-        }}
-      >
-        {Array.from({ length: Math.min(count, 5) }).map((_, index) => (
-          <div key={index} style={checkerStyle(index)} />
-        ))}
-        {count > 5 && (
-          <div style={{ marginTop: 4, color: "#f3d18b", fontSize: 12, fontWeight: 900 }}>
-            +{count - 5}
-          </div>
-        )}
-      </div>
-    );
+  function renderQuadrant(points: number[], isTop: boolean) {
+    return <div className="point-quadrant">{points.map((index) => renderPoint(index, isTop))}</div>;
   }
 
-  function SideTray({ player }: { player: Player }) {
-    const canBearOffForPlayer = player === currentPlayer && legalMoves.some((move) => move.isBearOff);
-
-    return (
-      <div
-        onClick={() => handleBearOffTrayClick(player)}
-        style={{
-          width: "clamp(58px, 4.6vw, 68px)",
-          minWidth: 58,
-          height: "100%",
-          borderRadius: 18,
-          background: "linear-gradient(145deg, #5b3219, #1a0904)",
-          border: "3px solid #7c461f",
-          boxShadow: canBearOffForPlayer
-            ? "inset 0 0 24px rgba(0,0,0,0.72), 0 0 0 5px rgba(255,226,138,0.95), 0 0 28px rgba(255,190,60,0.9)"
-            : "inset 0 0 24px rgba(0,0,0,0.72), 0 8px 18px rgba(0,0,0,0.45)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#f3d18b",
-          fontWeight: 900,
-          textAlign: "center",
-          overflow: "hidden",
-          padding: "8px 4px",
-          cursor: canBearOffForPlayer ? "pointer" : "default",
-          transition: "box-shadow 0.2s ease, transform 0.2s ease",
-          transform: canBearOffForPlayer ? "scale(1.02)" : "scale(1)",
-        }}
-      >
-        <div style={{ fontSize: 12 }}>{player.toUpperCase()}</div>
-        <div style={{ fontSize: 12, marginBottom: 5 }}>OFF</div>
-        <TrayCheckers player={player} count={off[player]} />
-        <div style={{ fontSize: 30, marginTop: 6, lineHeight: 1, color: "#ffd77f" }}>{off[player]}</div>
-      </div>
-    );
+  function renderBar(player: Player) {
+    return <button type="button" className={"board-bar " + (bar[player] > 0 ? "bar-occupied" : "")}
+      aria-label={player + " bar: " + bar[player] + " captured checkers"}
+      onClick={() => { if (bar[player] && currentPlayer === player && !isComputerController) {
+        setSelectedPoint(null); setLegalHelpActive(true); setMessage("Enter from the bar onto a highlighted point.");
+      } }}>
+      <span className="bar-word">BAR</span>
+      {bar[player] > 0 && <><span className={"bar-checker " + (player === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" /><strong>{bar[player]}</strong></>}
+    </button>;
   }
 
-  function CenterHinge({ section }: { section: "top" | "bottom" }) {
-    const player: Player = section === "top" ? "White" : "Black";
-    const count = bar[player];
-
-    return (
-      <div
-        aria-label={`${section === "top" ? "White" : "Black"} hit-checker bar`}
-        style={{
-          width: "clamp(3px, 0.35vw, 5px)",
-          minWidth: 3,
-          background: "linear-gradient(180deg, #050201, #1b0d04 45%, #050201)",
-          borderLeft: "1px solid rgba(255,210,120,0.12)",
-          borderRight: "1px solid rgba(0,0,0,0.75)",
-          boxShadow: "inset 0 0 6px rgba(0,0,0,0.9), 0 0 5px rgba(0,0,0,0.45)",
-          display: "flex",
-          alignItems: section === "top" ? "flex-end" : "flex-start",
-          justifyContent: "center",
-          overflow: "visible",
-          borderRadius: 2,
-          paddingTop: section === "bottom" ? 6 : 0,
-          paddingBottom: section === "top" ? 6 : 0,
-        }}
-      >
-        <TrayCheckers player={player} count={count} />
-      </div>
-    );
-  }
-
-  function PointQuadrant({ points, isTop }: { points: number[]; isTop: boolean }) {
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-          gap: 0,
-          minWidth: 0,
-          width: "100%",
-          height: "100%",
-          minHeight: 0,
-        }}
-      >
-        {points.map((index) => renderPoint(index, isTop))}
-      </div>
-    );
+  function renderOffTray(player: Player) {
+    const available = player === currentPlayer && !isComputerController && !diceRolling && !winner && legalMoves.some((move) => move.isBearOff);
+    return <button type="button" data-bear-off-player={player}
+      className={"off-tray " + (available ? "off-tray-available" : "")}
+      aria-label={player + " bear-off tray: " + off[player] + " of 15 off"}
+      onClick={() => handleBearOffTrayClick(player)}>
+      <span className={"tray-color " + (player === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
+      <span>OFF</span><strong>{off[player]}</strong><small>/ 15</small>
+    </button>;
   }
 
   const topLeftRow = [12, 13, 14, 15, 16, 17];
@@ -3933,1124 +3642,137 @@ export default function App() {
     );
   }
 
+
+  const humanCanAct = !isComputerController && !autoTestRunning && !diceRolling && !confirmResign;
+  const canChooseHere = canChooseDoctrine && humanCanAct;
+  const statusText = winner && finalResult ? formatFinalResult(finalResult) :
+    diceRolling ? "Rolling dice…" : isComputerController ? "Computer is thinking…" :
+    canChooseHere ? "You won the opening roll. Choose WAR or PEACE." : message;
+
   return (
-    <div
-      onDragStart={(event) => event.preventDefault()}
-      style={{
-        background: "radial-gradient(circle at 50% 0%, #3a1d0d 0%, #120704 48%, #020100 100%)",
-        height: "100dvh",
-        minHeight: "100dvh",
-        color: "white",
-        padding: "clamp(5px, 0.7vw, 9px)",
-        boxSizing: "border-box",
-        width: "100vw",
-        fontFamily: "Georgia, 'Times New Roman', serif",
-        overflow: "hidden",
-        maxWidth: "100vw",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <style>{`
-        html, body, #root {
-          width: 100%;
-          height: 100%;
-          margin: 0;
-          overflow: hidden;
-        }
-
-        * {
-          box-sizing: border-box;
-          user-select: none;
-          -webkit-user-select: none;
-          -webkit-user-drag: none;
-        }
-
-        button {
-          user-select: none;
-          -webkit-user-select: none;
-        }
-
-        [data-point-index] {
-          user-select: none;
-          -webkit-user-select: none;
-          -webkit-user-drag: none;
-        }
-        @keyframes diceShake {
-          0% { transform: rotate(0deg) scale(1); }
-          20% { transform: rotate(-8deg) scale(1.08); }
-          40% { transform: rotate(8deg) scale(1.12); }
-          60% { transform: rotate(-6deg) scale(1.08); }
-          80% { transform: rotate(4deg) scale(1.03); }
-          100% { transform: rotate(0deg) scale(1); }
-        }
-        @keyframes cinematicFade {
-          0% { opacity: 0; }
-          15% { opacity: 1; }
-          85% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-        @keyframes winSpectacle {
-          0% { opacity: 0; transform: scale(0.72) rotate(-2deg); }
-          14% { opacity: 1; transform: scale(1.06) rotate(1deg); }
-          28% { transform: scale(1) rotate(0deg); }
-          82% { opacity: 1; transform: scale(1.02); }
-          100% { opacity: 0; transform: scale(1.18); }
-        }
-        @keyframes sparkleFall {
-          0% { opacity: 0; transform: translateY(-20px) scale(0.2) rotate(0deg); }
-          20% { opacity: 1; }
-          100% { opacity: 0; transform: translateY(120px) scale(1) rotate(180deg); }
-        }
-        @keyframes doublesSuck {
-          0% { opacity: 0; transform: translateY(0) scale(0.82); }
-          14% { opacity: 1; transform: translateY(0) scale(1); }
-          64% { opacity: 1; transform: translateY(0) scale(1); }
-          100% { opacity: 0; transform: translateY(-34vh) translateX(-30vw) scale(0.18); }
-        }
-        @keyframes warPulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.03); }
-          100% { transform: scale(1); }
-        }
-        @keyframes peaceGlow {
-          0% { box-shadow: 0 0 0 rgba(80,180,255,0); }
-          50% { box-shadow: 0 0 28px rgba(80,180,255,0.65); }
-          100% { box-shadow: 0 0 0 rgba(80,180,255,0); }
-        }
-        @keyframes enemyFlash {
-          0% { filter: brightness(1); }
-          50% { filter: brightness(1.25); }
-          100% { filter: brightness(1); }
-        }
-        @keyframes neutralGlow {
-          0% { filter: brightness(1); }
-          50% { filter: brightness(1.14); }
-          100% { filter: brightness(1); }
-        }
-        @keyframes warningFade {
-          0% { opacity: 0; transform: translateY(-10px) scale(0.98); }
-          12% { opacity: 1; transform: translateY(0) scale(1); }
-          82% { opacity: 1; transform: translateY(0) scale(1); }
-          100% { opacity: 0; transform: translateY(-6px) scale(0.99); }
-        }
-        @keyframes capturePop {
-          0% { opacity: 0; transform: scale(0.45) rotate(-8deg); filter: blur(3px); }
-          18% { opacity: 1; transform: scale(1.16) rotate(3deg); filter: blur(0); }
-          42% { opacity: 1; transform: scale(0.98) rotate(0); }
-          82% { opacity: 1; transform: scale(1); }
-          100% { opacity: 0; transform: scale(1.08) translateY(-18px); }
-        }
-        @keyframes peaceViolationBlast {
-          0% { opacity: 0; transform: scale(0.72); filter: saturate(1.8) blur(2px); }
-          12% { opacity: 1; transform: scale(1.08); filter: saturate(1.5) blur(0); }
-          28% { transform: scale(0.98); }
-          70% { opacity: 1; transform: scale(1); }
-          100% { opacity: 0; transform: scale(1.05) translateY(-26px); }
-        }
-        @keyframes openingRollBlink {
-          0% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 rgba(255,226,138,0); }
-          50% { transform: scale(1.035); filter: brightness(1.22); box-shadow: 0 0 24px rgba(255,226,138,0.88), 0 0 42px rgba(255,178,48,0.48); }
-          100% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 rgba(255,226,138,0); }
-        }
-        @keyframes openingChoiceGlow {
-          0% { box-shadow: 0 0 8px rgba(255,226,138,0.35); }
-          50% { box-shadow: 0 0 24px rgba(255,226,138,0.86), 0 0 32px rgba(40,150,255,0.45); }
-          100% { box-shadow: 0 0 8px rgba(255,226,138,0.35); }
-        }
-        @keyframes dragPulse {
-          0% { filter: brightness(1); }
-          100% { filter: brightness(1.2); }
-        }
-      `}</style>
-
-      {draggingPoint !== null && dragPosition && board[draggingPoint]?.owner && (
-        <div
-          style={{
-            position: "fixed",
-            left: dragPosition.x,
-            top: dragPosition.y,
-            transform: "translate(-50%, -50%)",
-            pointerEvents: "none",
-            zIndex: 10000,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 7,
-          }}
-        >
-          <div
-            style={{
-              width: "clamp(48px, 4.6vw, 64px)",
-              height: "clamp(48px, 4.6vw, 64px)",
-              borderRadius: "50%",
-              transform: "scale(1.12)",
-              background:
-                board[draggingPoint].owner === "White"
-                  ? "radial-gradient(circle at 32% 24%, #ffffff 0%, #f8eed7 30%, #c8b081 58%, #7e6b4a 82%, #3b3020 100%)"
-                  : "radial-gradient(circle at 32% 24%, #7f7f7f 0%, #2f2f2f 34%, #0b0b0b 72%, #000 100%)",
-              border: board[draggingPoint].owner === "White" ? "3px solid #fff0c8" : "3px solid #050505",
-              boxShadow: "0 20px 32px rgba(0,0,0,0.78), 0 0 0 5px rgba(255,230,150,0.48), 0 0 30px rgba(255,210,80,0.52)",
-              animation: "dragPulse 0.75s ease-in-out infinite alternate",
-            }}
-          />
-          <div
-            style={{
-              background: "rgba(10, 4, 0, 0.88)",
-              color: "#ffeab0",
-              border: "1px solid rgba(255, 220, 130, 0.85)",
-              borderRadius: 999,
-              padding: "4px 9px",
-              fontSize: "clamp(10px, 0.9vw, 13px)",
-              fontWeight: 900,
-              boxShadow: "0 8px 14px rgba(0,0,0,0.45)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Release on glow
+    <main className="game-app" onDragStart={(event) => event.preventDefault()}
+      onPointerDownCapture={() => { if (soundEnabled) getAudioContext(); }}
+      onKeyDownCapture={() => { if (soundEnabled) getAudioContext(); }}>
+      <RulesDialog open={showRules} onClose={() => setShowRules(false)} />
+      {!setupComplete ? <GameIntro
+        onPlayBalanced={() => startComputerGame("BALANCED")}
+        onPlayAggressive={() => startComputerGame("CONTROLLED_COMEBACK")}
+        onPlayTwoPlayers={startTwoPlayerGame}
+        onShowRules={() => setShowRules(true)}
+        onResume={hasSavedGame ? loadSavedGame : undefined}
+      /> : <>
+        <header className="game-header">
+          <div className="game-brand"><span className="brand-pieces" aria-hidden="true"><i className="checker-dark" /><i className="checker-light" /></span>
+            <div><h1>War <span>&amp;</span> Peace</h1><p>BACKGAMMON</p></div>
           </div>
-        </div>
-      )}
+          <p className="game-opponent">{playSetupMode === "TWO_PLAYERS" ? "Two players · pass & play" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Computer 2 · Aggressive" : "Computer 1 · Balanced"}</p>
+          <nav className="game-nav" aria-label="Game navigation">
+            <button type="button" onClick={() => setShowRules(true)}>How to play</button>
+            <button type="button" onClick={backToGameMenu}>Menu</button>
+          </nav>
+        </header>
 
-      {warningMessage && (
-        <div
-          style={{
-            position: "fixed",
-            top: "clamp(12px, 2.2vw, 28px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10001,
-            pointerEvents: "none",
-            background: "linear-gradient(145deg, #5b0000, #d71919 58%, #ff6b35)",
-            color: "white",
-            border: "3px solid #ffd18a",
-            borderRadius: 18,
-            boxShadow: "0 14px 34px rgba(0,0,0,0.58), 0 0 22px rgba(255,74,44,0.58)",
-            padding: "clamp(10px, 1.4vw, 14px) clamp(16px, 2.4vw, 28px)",
-            fontSize: "clamp(16px, 1.9vw, 24px)",
-            fontWeight: 900,
-            letterSpacing: 0.3,
-            textAlign: "center",
-            animation: "warningFade 1.8s ease forwards",
-          }}
-        >
-          {warningMessage}
-        </div>
-      )}
+        {canEditPlayers && <section className="player-setup" aria-label="Player names">
+          <label><span className="tiny-checker checker-light" aria-hidden="true" />White
+            <input aria-label="White player name" maxLength={30} value={whitePlayerName} onChange={(event) => setWhitePlayerName(event.target.value)} />
+          </label>
+          <label><span className="tiny-checker checker-dark" aria-hidden="true" />Black
+            <input aria-label="Black player name" maxLength={30} value={blackPlayerName} disabled={isComputerGame} onChange={(event) => setBlackPlayerName(event.target.value)} />
+          </label>
+        </section>}
 
-      {turnBanner && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            pointerEvents: "none",
-            animation: turnBanner.startsWith("DOUBLES - ")
-              ? "doublesSuck 3s cubic-bezier(.18,.82,.24,1) forwards"
-              : turnBanner.startsWith("PEACE VIOLATION")
-              ? "peaceViolationBlast 2.2s ease forwards"
-              : turnBanner.startsWith("POW!")
-              ? "capturePop 1.3s ease forwards"
-              : turnBanner.includes("WINS")
-              ? "winSpectacle 3s ease forwards"
-              : "cinematicFade 1.3s ease forwards",
-          }}
-        >
-          <div
-            style={{
-              padding: "24px 38px",
-              borderRadius: 22,
-              background: turnBanner.startsWith("PEACE VIOLATION")
-                ? "linear-gradient(135deg,#003a8c 0%,#1b75ff 38%,#ffe66d 50%,#ff4a1c 62%,#6a0000 100%)"
-                : turnBanner.startsWith("POW!")
-                ? "radial-gradient(circle at 50% 35%,#fff7b8 0%,#ffb11f 28%,#b13c00 56%,#330800 100%)"
-                : turnBanner.includes("WAR")
-                ? "linear-gradient(145deg,#620000,#e51b1b)"
-                : turnBanner.includes("PEACE")
-                ? "linear-gradient(145deg,#003a8c,#2298e6)"
-                : turnBanner.includes("WINS")
-                ? "linear-gradient(135deg,#fff7c7 0%,#f4cf5e 22%,#b87816 48%,#fff0a8 66%,#6e3f08 100%)"
-                : "linear-gradient(145deg,#1b1207,#7b5524,#d4a14d)",
-              color: "white",
-              fontSize: turnBanner.startsWith("PEACE VIOLATION")
-                ? "clamp(26px,4.6vw,58px)"
-                : turnBanner.startsWith("POW!")
-                ? "clamp(34px,6vw,78px)"
-                : turnBanner.includes("DOUBLES")
-                ? "clamp(17px,2.6vw,32px)"
-                : turnBanner.includes("WINS OPENING ROLL")
-                ? "clamp(20px,3vw,36px)"
-                : "clamp(30px,5vw,68px)",
-              fontWeight: 900,
-              letterSpacing: 2,
-              boxShadow: "0 20px 40px rgba(0,0,0,0.65)",
-              textShadow: "0 3px 12px rgba(0,0,0,0.6)",
-            }}
-          >
-            {turnBanner.startsWith("PEACE VIOLATION") ? (
-              <div style={{ position: "relative", minWidth: "clamp(280px, 44vw, 650px)", textAlign: "center", padding: "10px 18px" }}>
-                <div style={{ fontSize: "0.42em", letterSpacing: 3, color: "#d8f0ff", marginBottom: 2 }}>PEACE VIOLATION</div>
-                <div style={{ lineHeight: 0.95, textShadow: "0 0 18px rgba(255,238,120,0.9), 0 4px 10px rgba(0,0,0,0.75)" }}>ENEMY CONTROL</div>
-                <div style={{ fontSize: "0.3em", marginTop: 8, letterSpacing: 1.6, color: "#fff0aa" }}>Opponent controls the remaining moves</div>
-              </div>
-            ) : turnBanner.startsWith("POW!") ? (
-              <div style={{ position: "relative", minWidth: "clamp(230px, 34vw, 520px)", textAlign: "center", padding: "4px 14px" }}>
-                <div style={{ fontSize: "1.05em", lineHeight: 0.9, textShadow: "0 0 20px rgba(255,244,120,0.95), 0 5px 12px rgba(0,0,0,0.8)" }}>POW!</div>
-                <div style={{ fontSize: "0.38em", letterSpacing: 3, marginTop: 8 }}>CAPTURED</div>
-              </div>
-            ) : turnBanner.includes("WINS") ? (
-              <div style={{ position: "relative", minWidth: "clamp(240px, 36vw, 520px)", textAlign: "center", padding: "8px 16px" }}>
-                {Array.from({ length: 18 }).map((_, index) => (
-                  <span
-                    key={index}
-                    style={{
-                      position: "absolute",
-                      left: `${8 + ((index * 37) % 84)}%`,
-                      top: `${-24 + ((index * 19) % 22)}px`,
-                      fontSize: index % 3 === 0 ? "0.62em" : "0.42em",
-                      animation: `sparkleFall ${1.1 + (index % 5) * 0.18}s ease-in ${index * 0.035}s infinite`,
-                      color: index % 2 === 0 ? "#fff6b0" : "#ffffff",
-                    }}
-                  >
-                    ✦
-                  </span>
-                ))}
-                <div style={{ fontSize: "0.38em", letterSpacing: 3, marginBottom: 4 }}>VICTORY</div>
-                <div>{turnBanner}</div>
-              </div>
-            ) : turnBanner.startsWith("DOUBLES - ") ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
-                <span style={{ fontSize: "0.5em", letterSpacing: 1 }}>DOUBLES</span>
-                <span>{turnBanner.replace("DOUBLES - ", "")}</span>
-              </div>
-            ) : (
-              turnBanner
-            )}
-          </div>
-        </div>
-      )}
-
-      {playSetupMode === "MENU" && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9000,
-            background: "radial-gradient(circle at 50% 18%, rgba(70,35,12,0.97), rgba(8,3,1,0.98) 58%, rgba(0,0,0,0.99))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 18,
-          }}
-        >
-          <div
-            style={{
-              width: "min(92vw, 760px)",
-              borderRadius: 26,
-              padding: "clamp(20px, 3vw, 34px)",
-              background: "linear-gradient(145deg, rgba(255,235,180,0.18), rgba(20,8,2,0.96))",
-              border: "3px solid rgba(255,213,128,0.75)",
-              boxShadow: "0 24px 70px rgba(0,0,0,0.78), inset 0 1px 0 rgba(255,235,180,0.22)",
-              color: "#ffe6ad",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "clamp(30px, 5vw, 58px)", fontWeight: 900, color: "#f0cf8a", textShadow: "0 5px 18px rgba(0,0,0,0.8)", marginBottom: 8 }}>
-              War & Peace Backgammon
+        <section className="game-layout" aria-label="Backgammon table">
+          <div className="board-frame" data-testid="board">
+            <div className="board-half">
+              {renderQuadrant(topLeftRow, true)}
+              {renderBar("White")}
+              {renderQuadrant(topRightRow, true)}
+              {renderOffTray("White")}
             </div>
-            <div style={{ fontSize: "clamp(14px, 1.5vw, 19px)", fontWeight: 800, color: "#fff2c8", marginBottom: 22, lineHeight: 1.35 }}>
-              Choose a game type. You can still open developer testing tools at the bottom in the testing version.
-            </div>
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px", background: "linear-gradient(145deg,#fff0b8,#b87321 62%,#3b1605)", color: "#1a0900" }} onClick={() => startComputerGame("BALANCED")}>
-                Play Computer 1 - Balanced
-              </button>
-              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Solid, careful, normal computer opponent.</div>
-
-              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px", background: "linear-gradient(145deg,#ffd6b0,#b73221 58%,#2d0500)", color: "#210400" }} onClick={() => startComputerGame("CONTROLLED_COMEBACK")}>
-                Play Computer 2 - Aggressive
-              </button>
-              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Riskier War & Peace specialist. Looks for comeback chances when behind.</div>
-
-              <button type="button" style={{ ...luxuryButton, fontSize: "clamp(18px, 2vw, 25px)", padding: "16px 20px" }} onClick={startTwoPlayerGame}>
-                Two Players
-              </button>
-              <div style={{ color: "rgba(255,231,183,0.74)", fontSize: 13, fontWeight: 800, marginTop: -6 }}>Two people on the same computer or screen.</div>
+            <div className="board-center-line" aria-hidden="true" />
+            <div className="board-half">
+              {renderQuadrant(bottomLeftRow, false)}
+              {renderBar("Black")}
+              {renderQuadrant(bottomRightRow, false)}
+              {renderOffTray("Black")}
             </div>
           </div>
-        </div>
-      )}
 
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(5px, 0.65vw, 8px)",
-          minHeight: "clamp(58px, 8dvh, 76px)",
-          display: "grid",
-          gridTemplateColumns: "minmax(230px, 0.88fr) minmax(430px, 1.55fr)",
-          gap: 8,
-          alignItems: "stretch",
-          borderRadius: 16,
-          border: "2px solid rgba(226,171,87,0.58)",
-          background: "linear-gradient(145deg, rgba(92,50,22,0.92), rgba(22,9,3,0.96))",
-          boxShadow: "inset 0 1px 0 rgba(255,230,170,0.16), 0 8px 18px rgba(0,0,0,0.45)",
-          padding: "clamp(5px, 0.65vw, 8px) clamp(7px, 0.8vw, 11px)",
-        }}
-      >
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div
-            style={{
-              fontSize: "clamp(20px, 2.15vw, 30px)",
-              lineHeight: 1,
-              fontWeight: 900,
-              letterSpacing: 0.4,
-              textShadow: "0 3px 8px rgba(0,0,0,0.7)",
-              color: "#f0cf8a",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            War &amp; Peace Backgammon
-          </div>
-          {setupComplete && (
-            <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-              <div
-                style={{
-                  minWidth: 0,
-                  color: "#ffe6ad",
-                  fontSize: "clamp(10px, 1vw, 13px)",
-                  fontWeight: 900,
-                  padding: "4px 9px",
-                  border: "1px solid rgba(255,213,128,0.45)",
-                  borderRadius: 999,
-                  background: "rgba(0,0,0,0.28)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {playSetupMode === "TWO_PLAYERS" ? "Two Players" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Human vs Computer 2 - Aggressive" : "Human vs Computer 1 - Balanced"}
-              </div>
-              <button type="button" style={{ ...luxuryButton, minWidth: 120, padding: "6px 10px", fontSize: 10 }} onClick={backToGameMenu}>
-                Change Game Type
-              </button>
+          <aside className="game-console" aria-label="Game controls">
+            <div className={"mode-badge " + (enemyControl ? "badge-control" : neutralModeState ? "badge-neutral" : modeIsWar ? "badge-war" : "badge-peace")} data-testid="mode">
+              <small>{enemyControl ? "PEACE VIOLATION" : "CURRENT MODE"}</small>
+              <strong>{enemyControl ? "ENEMY CONTROL" : neutralModeState ? "WAR & PEACE" : mode}</strong>
             </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            minWidth: 0,
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            gap: 6,
-            alignItems: "stretch",
-          }}
-        >
-          {([
-            ["White", whitePlayerName, setWhitePlayerName, whiteRecord] as const,
-            ["Black", blackPlayerName, setBlackPlayerName, blackRecord] as const,
-          ]).map(([color, value, setter, stats]) => (
-            <div
-              key={color}
-              style={{
-                minWidth: 0,
-                background: "linear-gradient(145deg, rgba(255,238,190,0.13), rgba(20,8,2,0.72))",
-                border: "1px solid rgba(226,171,87,0.46)",
-                borderRadius: 12,
-                padding: "4px 6px",
-                boxShadow: "inset 0 1px 0 rgba(255,230,170,0.12)",
-              }}
-            >
-              <label
-                style={{
-                  display: "block",
-                  color: color === "White" ? "#fff2c8" : "#d7d7d7",
-                  fontSize: "clamp(9px, 0.85vw, 11px)",
-                  fontWeight: 900,
-                  letterSpacing: 0.6,
-                  marginBottom: 2,
-                }}
-              >
-                {color} Player
-              </label>
-              <input
-                value={value}
-                onChange={(event) => setter(event.target.value)}
-                disabled={!canEditPlayers || (isComputerGame && color === "Black")}
-                list="war-peace-known-players"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  borderRadius: 9,
-                  border: "1px solid rgba(255,226,138,0.68)",
-                  background: canEditPlayers && !(isComputerGame && color === "Black") ? "#fff8df" : "rgba(255,248,223,0.72)",
-                  color: "#1b0b03",
-                  padding: "4px 7px",
-                  fontSize: "clamp(12px, 1.05vw, 15px)",
-                  fontWeight: 900,
-                  outline: "none",
-                  fontFamily: "Georgia, 'Times New Roman', serif",
-                }}
-              />
-              <div
-                style={{
-                  marginTop: 2,
-                  color: "rgba(255,231,183,0.72)",
-                  fontSize: "clamp(8px, 0.75vw, 10px)",
-                  fontWeight: 800,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {stats
-                  ? `${stats.wins}-${stats.losses} • ${formatWinRate(stats.wins, stats.games)} wins • avg ${averagePips(stats.totalLoserPipsWhenWon, stats.wins)} pips`
-                  : "No prior games recorded."}
+            <div className="turn-summary" data-testid="turn">
+              <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
+              <div><strong>{winner ? winner + " wins" : currentPlayer + " to move"}</strong>
+                <small>{enemyControl ? controller + " controls " + currentPlayer + "’s checkers" : currentPlayer === "White" ? whitePlayerName : blackPlayerName}</small></div>
+            </div>
+            <div className="dice-panel">
+              <span className="console-label">{awaitingModeChoice ? "OPENING ROLL" : "DICE REMAINING"}</span>
+              <div className={"dice-row " + (diceRolling ? "dice-rolling" : "")} data-testid="dice">
+                {displayDice.length ? displayDice.map(renderDie) : <><span className="die-empty">·</span><span className="die-empty">·</span></>}
               </div>
             </div>
-          ))}
-          <datalist id="war-peace-known-players">
-            {knownPlayers.map((player) => (
-              <option key={player.name} value={player.name} />
-            ))}
-          </datalist>
-        </div>
-      </div>
-
-      <div
-        style={{
-          width: shellWidth,
-          minHeight: 0,
-          flex: "1 1 auto",
-          margin: "0 auto",
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) clamp(206px, 21vw, 246px)",
-          gap: "clamp(5px, 0.7vw, 9px)",
-          alignItems: "stretch",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          minHeight: 0,
-          margin: 0,
-          background: "linear-gradient(145deg, #5a3218, #2a1207 58%, #120603)",
-          padding: "clamp(4px, 0.55vw, 6px)",
-          borderRadius: 18,
-          border: "clamp(4px, 0.65vw, 7px) solid #2a1408",
-          boxShadow: "inset 0 0 0 2px rgba(231,160,72,0.24), inset 0 0 38px rgba(0,0,0,0.65), 0 24px 52px rgba(0,0,0,0.72)",
-          display: "grid",
-          gridTemplateRows: "minmax(0, 1fr) clamp(14px, 1.8dvh, 18px) minmax(0, 1fr)",
-          gap: "3px",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
-            gap: 2,
-            minHeight: 0,
-            height: "100%",
-          }}
-        >
-          <div
-            style={{
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "4px 1px 0",
-              height: "100%",
-              minHeight: 0,
-            }}
-          >
-            <PointQuadrant points={topLeftRow} isTop={true} />
-          </div>
-
-          <CenterHinge section="top" />
-
-          <div
-            style={{
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "4px 1px 0",
-              height: "100%",
-              minHeight: 0
-            }}
-          >
-            <PointQuadrant points={topRightRow} isTop={true} />
-          </div>
-
-          <SideTray player="White" />
-        </div>
-
-        <div
-          aria-hidden="true"
-          style={{
-            height: "100%",
-            margin: 0,
-            borderRadius: 10,
-            background: "linear-gradient(90deg, rgba(0,0,0,0.86), rgba(26,38,20,0.95), rgba(0,0,0,0.86))",
-            border: "1px solid rgba(255,210,130,0.12)",
-            boxShadow: "inset 0 1px 0 rgba(255,220,150,0.06), 0 2px 6px rgba(0,0,0,0.36)",
-          }}
-        />
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) clamp(3px, 0.35vw, 5px) minmax(0, 1fr) clamp(48px, 4vw, 56px)",
-            gap: 2,
-            minHeight: 0,
-            height: "100%",
-          }}
-        >
-          <div
-            style={{
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 1px 4px",
-              height: "100%",
-              minHeight: 0
-            }}
-          >
-            <PointQuadrant points={bottomLeftRow} isTop={false} />
-          </div>
-
-          <CenterHinge section="bottom" />
-
-          <div
-            style={{
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "linear-gradient(90deg, #243b1d, #4b642f 50%, #243b1d)",
-              padding: "0 1px 4px",
-              height: "100%",
-              minHeight: 0
-            }}
-          >
-            <PointQuadrant points={bottomRightRow} isTop={false} />
-          </div>
-
-          <SideTray player="Black" />
-        </div>
-      </div>
-
-
-        </div>
-
-        <aside
-          style={{
-            minWidth: 0,
-            minHeight: 0,
-            display: "grid",
-            gridTemplateRows: "auto auto auto auto auto 1fr auto",
-            gap: "clamp(5px, 0.65vw, 8px)",
-            padding: "clamp(7px, 0.85vw, 10px)",
-            borderRadius: 17,
-            border: "2px solid rgba(226,171,87,0.56)",
-            background: "linear-gradient(180deg, rgba(80,42,15,0.96), rgba(18,7,2,0.98))",
-            boxShadow: "inset 0 1px 0 rgba(255,230,170,0.14), 0 10px 24px rgba(0,0,0,0.52)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              background: doctrineBannerBackground,
-              borderRadius: 14,
-              border: "2px solid #9a6328",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: "clamp(36px, 5.4dvh, 48px)",
-              fontSize: enemyControl
-                ? "clamp(12px, 1.35vw, 16px)"
-                : neutralModeState
-                ? "clamp(16px, 2vw, 24px)"
-                : "clamp(26px, 3.2vw, 42px)",
-              fontWeight: 900,
-              color: enemyControl || neutralModeState ? "#1b0b00" : "white",
-              textAlign: "center",
-              padding: 3,
-              boxShadow: doctrineBannerShadow,
-              animation: doctrineBannerAnimation,
-              textShadow: neutralModeState ? "0 1px 2px rgba(255,255,255,0.28)" : "0 3px 8px rgba(0,0,0,0.5)",
-            }}
-          >
-            {doctrineBannerText}
-          </div>
-
-          <div
-            style={{
-              background: activeTurnGlowBackground,
-              border: activeTurnGlowBorder,
-              borderRadius: 14,
-              padding: 4,
-              textAlign: "center",
-              minHeight: "clamp(54px, 8.5dvh, 70px)",
-              color: activeTurnGlowColor,
-              boxShadow: enemyControl
-                ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
-                : activeTurnIsWhite
-                ? "0 0 20px rgba(255,248,190,0.72), inset 0 1px 0 rgba(255,255,255,0.55)"
-                : "0 0 20px rgba(190,105,30,0.72), inset 0 1px 0 rgba(255,210,140,0.22)",
-            }}
-          >
-            <div style={{ fontWeight: "bold", marginBottom: 1, fontSize: 9 }}>DICE</div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                animation: diceRolling ? "diceShake 0.6s infinite" : "none",
-                minHeight: 45,
-                alignItems: "center",
-              }}
-            >
-              {displayDice.length > 0 ? displayDice.slice(0, 4).map((die, index) => renderDie(die, index)) : "-"}
+            <div className="pip-summary" aria-label="Pip counts">
+              <div><small>WHITE</small><strong>{whitePipCount}</strong></div>
+              <span>PIPS</span><div><small>BLACK</small><strong>{blackPipCount}</strong></div>
             </div>
+            <div className="main-actions">
+              {gamePhase === "OPENING_ROLL" && <button className="primary-action" type="button" disabled={!canRollOpening || autoTestRunning} onClick={rollOpening}>Roll opening dice</button>}
+              {canChooseHere && <div className="mode-choices"><button type="button" className="choose-war" onClick={() => chooseMode("WAR")}>Choose WAR</button><button type="button" className="choose-peace" onClick={() => chooseMode("PEACE")}>Choose PEACE</button></div>}
+              {turnIsPlayable && <button type="button" className="primary-action" disabled={!canSubmitTurn || !humanCanAct} onClick={submitTurn}>{diceRolling ? "Rolling…" : isComputerController ? "Computer’s turn" : "End turn"}</button>}
+              {winner && <button type="button" className="primary-action" onClick={() => { diagnosticGameRef.current = false; resetNewGame(); }}>Play again</button>}
+            </div>
+            <div className="game-status" role="status" aria-live="polite" data-testid="status">
+              {statusText}
+              {turnGuidance && !winner && !diceRolling && <small>{turnGuidance}</small>}
+            </div>
+            <div className="secondary-actions">
+              <button type="button" disabled={!canUndo} onClick={undoMove}>Undo move</button>
+              <button type="button" aria-pressed={soundEnabled} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) playSoundTest(); }}>Sound {soundEnabled ? "on" : "off"}</button>
+              <button type="button" aria-expanded={showRecords} onClick={() => setShowRecords((value) => !value)}>Records</button>
+              <button type="button" disabled={!canResign || autoTestRunning} onClick={resignGame}>{confirmResign ? "Confirm resign" : "Resign"}</button>
+            </div>
+            {confirmResign && <button type="button" className="cancel-resign" onClick={() => { setConfirmResign(false); setMessage("Resignation cancelled. Continue playing."); }}>Keep playing</button>}
+            <p className="save-note">{diagnosticGameRef.current ? "Diagnostic game · personal save preserved" : saveAvailable ? "Progress saves on this device." : "Saving unavailable in this browser."}</p>
+          </aside>
+        </section>
+        <footer className="game-footer"><span>Tap a checker, then a highlighted point. You can also drag.</span><span>White → 24 &nbsp;·&nbsp; Black → 1</span></footer>
+
+        {showRecords && <section className="records-panel">
+          <div className="section-heading"><h2>Player records</h2><button type="button" onClick={() => setShowRecords(false)}>Close</button></div>
+          {leaderboard.length === 0 ? <p>Completed games on this device will appear here.</p> : <table><thead><tr><th>Player</th><th>Wins</th><th>Losses</th><th>Win rate</th></tr></thead><tbody>{leaderboard.map((player) => <tr key={player.name}><th>{player.name}</th><td>{player.wins}</td><td>{player.losses}</td><td>{formatWinRate(player.wins, player.games)}</td></tr>)}</tbody></table>}
+          <p className="record-device-note">Records and saved progress stay in this browser.</p>
+        </section>}
+      </>}
+
+      {setupComplete && draggingPoint !== null && dragPosition && <div className={"drag-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" style={{ left: dragPosition.x, top: dragPosition.y }} />}
+      {warningMessage && <div className="game-warning" role="alert">{warningMessage}</div>}
+      {setupComplete && turnBanner && <div className={"turn-toast " + (turnBanner.includes("PEACE VIOLATION") ? "toast-control" : "")} role="status">
+        <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
+        <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? "Prisoner of Peace" : turnBanner}</strong>
+          {turnBanner.startsWith("PEACE VIOLATION") && <small>Peace violation · {controller} takes Enemy Control</small>}</div>
+      </div>}
+
+      {PUBLIC_SHOW_TESTING_TOOLS && <section className="testing-panel" aria-label="Developer testing tools">
+        <button className="testing-toggle" type="button" aria-expanded={showTestingPanel} onClick={() => setShowTestingPanel((value) => !value)}>{showTestingPanel ? "Hide testing tools" : "Testing tools"}</button>
+        {showTestingPanel && <>
+          <h2>Gameplay diagnostics</h2>
+          <p>{autoTestStatus} · {autoTestSummary.completedGames}/{autoTestSummary.targetGames} games</p>
+          <div className="test-actions">
+            <label>Speed <select aria-label="Test speed" value={autoTestSpeed} disabled={autoTestRunning} onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}><option value="SLOW">Slow</option><option value="FAST">Fast</option><option value="VERY_FAST">Very fast</option><option value="SAFE_TURBO">Safe batch</option></select></label>
+            <label>Strategy <select aria-label="Test strategy" value={autoTestStrategy} disabled={autoTestRunning} onChange={(event) => setAutoTestStrategy(event.target.value as AutoTestStrategy)}><option value="RANDOM_LEGAL">Random legal</option><option value="BALANCED">Balanced</option><option value="CONTROLLED_COMEBACK">Aggressive</option></select></label>
+            {[1, 10, 100].map((count) => <button key={count} type="button" disabled={autoTestRunning} onClick={() => startAutoTest(count)}>Run {count}</button>)}
+            <button type="button" disabled={!autoTestRunning} onClick={pauseAutoTest}>Pause</button>
+            <button type="button" onClick={stopAutoTest}>Stop</button>
+            <button type="button" onClick={() => void copyAutoTestReport()}>Copy report</button>
           </div>
-
-          <CombinedPipPanel />
-          <GameFlowPanel />
-
-          <div
-            style={{
-              background: activeTurnGlowBackground,
-              border: activeTurnGlowBorder,
-              borderRadius: 14,
-              padding: "5px 6px",
-              textAlign: "center",
-              color: activeTurnGlowColor,
-              minHeight: 50,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              gap: 2,
-              boxShadow: enemyControl
-                ? "0 0 22px rgba(255,220,55,0.82), inset 0 1px 0 rgba(255,255,230,0.5)"
-                : activeTurnIsWhite
-                ? "0 0 18px rgba(255,248,190,0.62), inset 0 1px 0 rgba(255,255,255,0.5)"
-                : "0 0 18px rgba(190,105,30,0.68), inset 0 1px 0 rgba(255,210,140,0.22)",
-            }}
-          >
-            <div style={{ fontSize: "clamp(8px, 0.78vw, 10px)", fontWeight: 900, letterSpacing: 1.1, opacity: 0.82 }}>TURN / CONTROL</div>
-            <div style={{ fontSize: "clamp(14px, 1.35vw, 19px)", fontWeight: 900, lineHeight: 1 }}>{currentPlayer.toUpperCase()}</div>
-            <div style={{ fontSize: "clamp(11px, 1vw, 14px)", fontWeight: 900, lineHeight: 1.1 }}>
-              {enemyControl || controller !== currentPlayer ? `Enemy Control: ${controller}` : `Controller: ${controller}`}
-            </div>
-          </div>
-
-          <div
-            style={{
-              minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: "clamp(5px, 0.65vw, 8px)",
-              justifyContent: "flex-start",
-            }}
-          >
-            {!playersReady && gamePhase === "OPENING_ROLL" && (
-              <div style={{ color: "#fff2bc", fontSize: 12, fontWeight: 900, textAlign: "center" }}>
-                Enter two different player names to begin.
-              </div>
-            )}
-
-            <button
-              style={{
-                ...luxuryButton,
-                width: "100%",
-                minHeight: 46,
-                fontSize: "clamp(15px, 1.45vw, 20px)",
-                letterSpacing: 0.9,
-                background: canRollOpening
-                  ? "linear-gradient(145deg, #fff8c8, #ffbd35 50%, #8b4500)"
-                  : luxuryButton.background,
-                color: canRollOpening ? "#160900" : luxuryButton.color,
-                border: canRollOpening ? "3px solid #fff0a4" : luxuryButton.border,
-                opacity: canRollOpening ? 1 : openingRollAlreadyUsed ? 0.16 : 0.45,
-                cursor: canRollOpening ? "pointer" : "not-allowed",
-                animation: canRollOpening ? "openingRollBlink 1s ease-in-out infinite" : "none",
-                pointerEvents: canRollOpening ? "auto" : "none",
-              }}
-              disabled={!canRollOpening}
-              onClick={rollOpening}
-              title={canRollOpening ? "Roll the opening dice now." : openingRollAlreadyUsed ? "Opening roll is complete." : "Choose game type and player names first."}
-            >
-              {openingRollAlreadyUsed ? "Opening Dice Rolled" : "Roll Opening Dice"}
-            </button>
-
-            {openingChoicePrompt && (
-              <div
-                style={{
-                  background: "linear-gradient(145deg, rgba(255,241,184,0.98), rgba(217,151,40,0.95) 58%, rgba(75,31,0,0.95))",
-                  color: "#1c0b00",
-                  border: "3px solid #fff1a6",
-                  borderRadius: 14,
-                  padding: "8px 9px",
-                  textAlign: "center",
-                  fontSize: "clamp(13px, 1.2vw, 17px)",
-                  fontWeight: 900,
-                  lineHeight: 1.18,
-                  animation: "openingChoiceGlow 1.2s ease-in-out infinite",
-                }}
-              >
-                {openingChoicePrompt}
-              </div>
-            )}
-
-            {canChooseDoctrine && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                <button
-                  style={{
-                    ...luxuryButton,
-                    background: "linear-gradient(145deg, #ffdbb0, #a00000)",
-                    color: "white",
-                    minWidth: 0,
-                    padding: "8px 6px",
-                  }}
-                  onClick={() => chooseMode("WAR")}
-                >
-                  WAR
-                </button>
-                <button
-                  style={{
-                    ...luxuryButton,
-                    background: "linear-gradient(145deg, #d9efff, #005aa8)",
-                    color: "white",
-                    minWidth: 0,
-                    padding: "8px 6px",
-                  }}
-                  onClick={() => chooseMode("PEACE")}
-                >
-                  PEACE
-                </button>
-              </div>
-            )}
-
-            <button
-              style={{
-                ...luxuryButton,
-                width: "100%",
-                minHeight: 42,
-                fontSize: "clamp(16px, 1.55vw, 21px)",
-                letterSpacing: 1.2,
-                background: canSubmitTurn
-                  ? "linear-gradient(145deg, #fff5c8, #d89024 55%, #653000)"
-                  : "linear-gradient(145deg, #201812, #050302)",
-                color: canSubmitTurn ? "#1a0900" : "#f3d18b",
-                border: canSubmitTurn ? "3px solid #ffe08a" : "2px solid #9a6328",
-                boxShadow: canSubmitTurn
-                  ? "0 0 18px rgba(255,210,90,0.58), inset 0 1px 0 rgba(255,255,230,0.5)"
-                  : "inset 0 1px 0 rgba(255,220,150,0.25), 0 5px 14px rgba(0,0,0,0.55)",
-                opacity: canSubmitTurn ? 1 : 0.45,
-                cursor: canSubmitTurn ? "pointer" : "not-allowed",
-                transform: canSubmitTurn ? "scale(1.01)" : "scale(1)",
-              }}
-              type="button"
-              disabled={!canSubmitTurn}
-              aria-disabled={!canSubmitTurn}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (canSubmitTurn) submitTurn(); else setMessage(gamePhase === "OPENING_ROLL" ? "Roll opening dice first." : "End Turn is not available yet."); }}
-              title={canSubmitTurn ? "End turn" : "Roll opening dice, choose WAR or PEACE, then make the first legal move."}
-            >
-              END TURN
-            </button>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-              <button
-                style={{
-                  ...luxuryButton,
-                  minWidth: 0,
-                  padding: "7px 9px",
-                  fontSize: 10,
-                  opacity: history.length > 0 ? 1 : 0.58,
-                }}
-                onClick={undoMove}
-              >
-                Undo
-              </button>
-              {gamePhase === "GAME_OVER" ? (
-                <button
-                  style={{
-                    ...luxuryButton,
-                    background: "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)",
-                    color: "#1a0900",
-                    minWidth: 0,
-                    padding: "7px 9px",
-                    fontSize: 10,
-                  }}
-                  type="button"
-                  onClick={resetNewGame}
-                  title="Start a new game from the opening roll."
-                >
-                  New Game
-                </button>
-              ) : (
-                <button
-                  style={{
-                    ...luxuryButton,
-                    minWidth: 0,
-                    padding: "7px 9px",
-                    fontSize: 10,
-                    background: showRecords
-                      ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
-                      : luxuryButton.background,
-                    color: showRecords ? "#1a0900" : luxuryButton.color,
-                  }}
-                  type="button"
-                  onClick={() => setShowRecords((visible) => !visible)}
-                  title="Show player records and recent game history"
-                >
-                  Records
-                </button>
-              )}
-            </div>
-
-            <button
-              style={{
-                ...luxuryButton,
-                width: "100%",
-                background: soundEnabled
-                  ? "linear-gradient(145deg, #fff2bc, #9d641d 70%, #321403)"
-                  : luxuryButton.background,
-                color: soundEnabled ? "#1a0900" : luxuryButton.color,
-              }}
-              type="button"
-              onClick={() => {
-                setSoundEnabled((enabled) => {
-                  const next = !enabled;
-                  if (next) playSoundTest();
-                  return next;
-                });
-              }}
-              title="Turn game sounds on or off. Turning sound on plays a quick test tone."
-            >
-              Sound {soundEnabled ? "On" : "Off"}
-            </button>
-
-            <div
-              style={{
-                color: "#ffe6ad",
-                background: "rgba(0,0,0,0.18)",
-                border: "1px solid rgba(255,213,128,0.28)",
-                borderRadius: 12,
-                padding: "6px 8px",
-                fontSize: "clamp(11px, 1vw, 13px)",
-                fontWeight: 800,
-                lineHeight: 1.25,
-                textAlign: "center",
-              }}
-            >
-              {winner && finalResult ? formatFinalResult(finalResult) : winner ? `${winner} wins! Game over.` : openingChoicePrompt ?? message}
-              {turnGuidance && !winner && (
-                <div style={{ marginTop: 4, color: "#fff2bc", fontWeight: 900 }}>{turnGuidance}</div>
-              )}
-            </div>
-          </div>
-
-          <button
-            style={{
-              ...luxuryButton,
-              width: "100%",
-              padding: "7px 10px",
-              fontSize: 10,
-              background: confirmResign
-                ? "linear-gradient(145deg, #ff9a7a, #7a0000 72%, #210000)"
-                : "linear-gradient(145deg, #2a120c, #090302 72%, #000)",
-              color: confirmResign ? "#fff3d0" : "#f3d18b",
-              border: confirmResign ? "2px solid #ffcf8a" : "2px solid #7a3f22",
-              opacity: canResign ? 1 : 0.45,
-              cursor: canResign ? "pointer" : "not-allowed",
-            }}
-            disabled={!canResign}
-            onClick={resignGame}
-            title={confirmResign ? "Confirm resignation" : "Resign game"}
-          >
-            {confirmResign ? "Confirm Resign" : "Resign"}
-          </button>
-        </aside>
-      </div>
-
-      {showRecords && (
-        <div
-          style={{
-            position: "fixed",
-            left: "50%",
-            bottom: "clamp(8px, 1vw, 14px)",
-            transform: "translateX(-50%)",
-            zIndex: 8500,
-            width: "min(94vw, 980px)",
-            maxHeight: "42dvh",
-            overflow: "auto",
-            background: "linear-gradient(145deg, rgba(255,242,188,0.16), rgba(32,14,4,0.98))",
-            border: "3px solid rgba(226,171,87,0.72)",
-            borderRadius: 20,
-            padding: "10px 12px",
-            boxShadow: "0 18px 38px rgba(0,0,0,0.68)",
-            color: "#ffeab0",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-            <div style={{ fontSize: "clamp(16px, 1.5vw, 21px)", fontWeight: 900 }}>Player Records</div>
-            <button type="button" style={{ ...luxuryButton, padding: "5px 10px" }} onClick={() => setShowRecords(false)}>Close</button>
-          </div>
-          {leaderboard.length === 0 ? (
-            <div style={{ fontWeight: 800 }}>No completed games yet.</div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
-              {leaderboard.slice(0, 8).map((player) => (
-                <div key={playerRecordKey(player.name)} style={{ border: "1px solid rgba(255,226,138,0.38)", borderRadius: 14, padding: "8px 10px", background: "rgba(0,0,0,0.22)" }}>
-                  <div style={{ fontSize: "clamp(14px, 1.35vw, 18px)", fontWeight: 900, color: "#fff4c7" }}>{player.name}</div>
-                  <div style={{ fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, marginTop: 3 }}>
-                    Record: {player.wins}-{player.losses} • Win rate: {formatWinRate(player.wins, player.games)}
-                  </div>
-                  <div style={{ fontSize: "clamp(11px, 1vw, 13px)", marginTop: 3, opacity: 0.92 }}>
-                    Avg winning margin: {averagePips(player.totalLoserPipsWhenWon, player.wins)} pips • WAR {player.war.wins}-{player.war.losses} • PEACE {player.peace.wins}-{player.peace.losses}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {recordBook.games.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.95 }}>
-              <strong>Recent:</strong>{" "}
-              {recordBook.games.slice(0, 3).map((game) => `${game.winnerPlayer} beat ${game.loserPlayer} (${game.mode}, ${game.reason === "RESIGNATION" ? "resignation" : "bear-off"}, ${game.loserPips} pips left)`).join("  •  ")}
-            </div>
-          )}
-        </div>
-      )}
-
-      {PUBLIC_SHOW_TESTING_TOOLS && (
-      <div
-        style={{
-          width: shellWidth,
-          margin: "0 auto clamp(12px, 1.2vw, 18px)",
-          textAlign: "center",
-        }}
-      >
-        <button
-          style={{
-            ...luxuryButton,
-            minWidth: 190,
-            opacity: autoTestRunning || showTestingPanel ? 1 : 0.72,
-          }}
-          type="button"
-          onClick={() => setShowTestingPanel((visible) => !visible)}
-          title="Show or hide computer testing tools."
-        >
-          {showTestingPanel ? "Hide Testing Tools" : "Testing Tools"}
-        </button>
-        {!showTestingPanel && (
-          <div style={{ marginTop: 5, color: "rgba(255,231,183,0.68)", fontSize: 12, fontWeight: 800 }}>
-            Public game controls stay clean. Auto Test remains available here for continued development.
-          </div>
-        )}
-
-        {showTestingPanel && (
-          <div
-            style={{
-              marginTop: 10,
-              background: autoTestError
-                ? "linear-gradient(145deg, rgba(90,0,0,0.92), rgba(20,0,0,0.96))"
-                : "linear-gradient(145deg, rgba(35,20,8,0.94), rgba(8,3,1,0.96))",
-              border: autoTestError ? "3px solid #ffb08e" : "2px solid rgba(255,213,128,0.55)",
-              borderRadius: 18,
-              padding: "10px 14px",
-              boxShadow: "0 12px 28px rgba(0,0,0,0.55)",
-              color: "#ffe6ad",
-            }}
-          >
-            <div style={{ fontWeight: 900, fontSize: "clamp(15px, 1.4vw, 19px)", marginBottom: 8 }}>
-              Developer Testing Panel: {autoTestStatus}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
-              <select
-                value={autoTestSpeed}
-                onChange={(event) => setAutoTestSpeed(event.target.value as AutoTestSpeed)}
-                disabled={autoTestRunning}
-                title="Auto Test speed"
-                style={{ ...luxuryButton, minWidth: 116, padding: "8px 10px", opacity: autoTestRunning ? 0.58 : 1 }}
-              >
-                <option value="SLOW">Slow</option>
-                <option value="FAST">Fast</option>
-                <option value="VERY_FAST">Very Fast</option>
-                <option value="SAFE_TURBO">Safe Turbo</option>
-              </select>
-              <select
-                value={autoTestStrategy}
-                onChange={(event) => setAutoTestStrategy(event.target.value as AutoTestStrategy)}
-                disabled={autoTestRunning}
-                title="Auto Test computer strategy"
-                style={{ ...luxuryButton, minWidth: 168, padding: "8px 10px", opacity: autoTestRunning ? 0.58 : 1 }}
-              >
-                <option value="RANDOM_LEGAL">Random Legal</option>
-                <option value="BALANCED">Balanced</option>
-                <option value="CONTROLLED_COMEBACK">Aggressive</option>
-              </select>
-              <button style={{ ...luxuryButton, minWidth: 104 }} type="button" onClick={autoTestRunning ? pauseAutoTest : () => startAutoTest(1)}>
-                {autoTestRunning ? "Pause" : "Run 1 Game"}
-              </button>
-              <button style={{ ...luxuryButton, minWidth: 96, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={() => startAutoTest(10)} disabled={autoTestRunning}>Run 10</button>
-              <button style={{ ...luxuryButton, minWidth: 96, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={() => startAutoTest(100)} disabled={autoTestRunning}>Run 100</button>
-              <button style={{ ...luxuryButton, minWidth: 92, opacity: diceRolling || autoTestRunning ? 0.45 : 1 }} type="button" onClick={stepAutoTestOnce} disabled={diceRolling || autoTestRunning}>Step Test</button>
-              <button style={{ ...luxuryButton, minWidth: 82 }} type="button" onClick={stopAutoTest}>Stop Test</button>
-              <button style={{ ...luxuryButton, minWidth: 116 }} type="button" onClick={() => void copyAutoTestReport()}>Copy Report</button>
-              <button style={{ ...luxuryButton, minWidth: 112, opacity: autoTestRunning ? 0.45 : 1 }} type="button" onClick={clearAutoTestReport} disabled={autoTestRunning}>Clear Report</button>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 6, color: "#fff1c9", fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 800, textAlign: "center" }}>
-              <div>Strategy: {AUTO_TEST_STRATEGY_LABELS[autoTestStrategy]}</div>
-              <div>Games: {autoTestSummary.completedGames}/{autoTestSummary.targetGames}</div>
-              <div>Average game: {autoTestSummary.averageDiceRolls} rolls</div>
-              <div>Playable rolls: {autoTestSummary.playableRolls}</div>
-              <div>Unplayable passes: {autoTestSummary.unplayableRolls}</div>
-              <div>Final margin avg/median: {autoTestSummary.averageFinalPipMargin}/{autoTestSummary.medianFinalPipMargin}</div>
-              <div>Highest pip count: {autoTestSummary.highestPipCount}</div>
-              <div>Largest pip gap: {autoTestSummary.largestPipGap}</div>
-              <div>Shutouts: {autoTestSummary.shutoutGames}</div>
-              <div>Enemy Control: {autoTestSummary.enemyControlTriggers}</div>
-            </div>
-
-            <div style={{ marginTop: 8, color: "#ffe7b7", fontSize: 13, fontWeight: 850, background: "rgba(255,230,173,0.08)", border: "1px solid rgba(255,226,138,0.22)", borderRadius: 12, padding: "7px 9px" }}>
-              Saved report: {autoTestSummary.stopReason} • {autoTestSummary.greatestComebackSummary}
-            </div>
-
-            {autoTestError && (
-              <div style={{ marginTop: 8, color: "#fff4d6", background: "rgba(255,0,0,0.18)", borderRadius: 12, padding: "7px 10px", fontWeight: 900 }}>
-                AUTO TEST STOPPED — {autoTestError}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      )}
-
-            <div style={{ display: "none" }}>
-        {showMoveLog && moveLog.length > 0 && (
-          <div>
-            {moveLog.map((entry) => (
-              <div key={entry.id}>{formatMoveLogEntry(entry)}</div>
-            ))}
-          </div>
-        )}
-        {showAnalysis && (
-          <div>
-            {legalAnalysis.explanation.map((line, index) => (
-              <div key={index}>{line}</div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+          <div className="test-summary"><span>Average: {autoTestSummary.averageDiceRolls} rolls</span><span>Passes: {autoTestSummary.unplayableRolls}</span><span>Blocked doubles: {autoTestSummary.blockedDoubles}</span><span>Enemy Control: {autoTestSummary.enemyControlTriggers}</span></div>
+          <p>{autoTestSummary.stopReason}</p>
+          {autoTestError && <p className="test-error" role="alert">{autoTestError}</p>}
+        </>}
+      </section>}
+    </main>
   );
 }
