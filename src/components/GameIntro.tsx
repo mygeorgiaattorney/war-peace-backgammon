@@ -71,7 +71,7 @@ export default function GameIntro({
           <p className="wp-intro-description">
             Playable doubles switch the mode. In PEACE, an exposed checker can become a
             land mine: force a capture and take control of your opponent’s remaining
-            moves. Plan for the turn that changes everything.
+            moves. Every playable die must be used—even when that breaks the peace.
           </p>
           <button className="wp-text-button wp-learn-button" type="button" onClick={onShowRules}>
             How to play <span aria-hidden="true">↗</span>
@@ -100,7 +100,7 @@ export default function GameIntro({
             <span className="wp-option-copy">
               <small>Computer 1</small>
               <strong>Balanced</strong>
-              <span>Careful attack and defense.</span>
+              <span>Careful defense and measured comeback traps.</span>
             </span>
             <span className="wp-option-arrow" aria-hidden="true">→</span>
           </button>
@@ -109,7 +109,7 @@ export default function GameIntro({
             <span className="wp-option-copy">
               <small>Computer 2</small>
               <strong>Aggressive</strong>
-              <span>Pressure, risk, and comeback chances.</span>
+              <span>Pressure and bolder land-mine comebacks.</span>
             </span>
             <span className="wp-option-arrow" aria-hidden="true">→</span>
           </button>

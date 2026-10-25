@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import GameIntro from "./components/GameIntro";
 import RulesDialog from "./components/RulesDialog";
+import { chooseStrategicMove, getLandmineProfile } from "./game/strategy";
+import GameNarration, { type NarrationEvent } from "./components/GameNarration";
 import "./game.css";
 
 function readStoredValue(key: string): string | null {
@@ -94,10 +96,12 @@ type Snapshot = {
   moveLog: MoveLogEntry[];
   lastMove: Move | null;
   turnMoveCount: number;
+  bearOffPriorityAtTurnStart: boolean;
 };
 
 type SavedGameState = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
+  bearOffPriorityAtTurnStart?: boolean;
   playSetupMode?: Exclude<PlaySetupMode, "MENU">;
   computerStrategy?: AutoTestStrategy;
   whitePlayerName?: string;
@@ -859,50 +863,18 @@ function generateSequences(
   return sequences;
 }
 
-function sequenceUsesDie(sequence: Sequence, die: number): boolean {
-  return sequence.diceUsed.includes(die);
-}
-
 function filterByMaximumMoves(sequences: Sequence[]): Sequence[] {
   if (sequences.length === 0) return sequences;
   const maxMovesUsed = Math.max(...sequences.map((sequence) => sequence.moves.length));
   return sequences.filter((sequence) => sequence.moves.length === maxMovesUsed);
 }
 
-function enforceLargerDieRule(
-  board: Point[],
-  player: Player,
-  dice: number[],
-  bar: BarState,
-  off: OffState,
-  sequences: Sequence[],
-  explanation: string[]
-): Sequence[] {
-  const distinctDice = uniqueDice(dice);
-  if (distinctDice.length !== 2 || dice.length !== 2 || sequences.length === 0) return sequences;
-
-  const [largerDie, smallerDie] = distinctDice;
-  const rawStartMoves = getRawMoves(board, player, dice, bar, off);
-  const largerPlayableNow = rawStartMoves.some((move) => move.die === largerDie);
-  const smallerPlayableNow = rawStartMoves.some((move) => move.die === smallerDie);
-  const maxMovesUsed = Math.max(...sequences.map((sequence) => sequence.moves.length));
-
-  if (maxMovesUsed === 1 && largerPlayableNow && smallerPlayableNow) {
-    const largerSequences = sequences.filter((sequence) => sequenceUsesDie(sequence, largerDie));
-    if (largerSequences.length > 0) {
-      explanation.push(`Only one die can be played. Larger die rule forces the ${largerDie}.`);
-      return largerSequences;
-    }
-  }
-
-  return sequences;
-}
-
 function filterByWarPeace(
   sequences: Sequence[],
   mode: Mode,
   controlState: ControlState,
-  explanation: string[]
+  explanation: string[],
+  bearOffPriorityAtTurnStart: boolean
 ): Sequence[] {
   if (sequences.length === 0) return sequences;
 
@@ -917,10 +889,11 @@ function filterByWarPeace(
 
     if (maxHits > 0) explanation.push(`WAR requires maximum hitting: ${maxHits} hit(s).`);
 
-    const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
-    best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
-
-    if (maxBearOffs > 0) explanation.push(`Bear-off priority applied: ${maxBearOffs} checker(s) off.`);
+    if (bearOffPriorityAtTurnStart) {
+      const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
+      best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
+      if (maxBearOffs > 0) explanation.push(`All checkers started home: maximize bearing off (${maxBearOffs}).`);
+    }
     return best;
   }
 
@@ -929,14 +902,15 @@ function filterByWarPeace(
 
   explanation.push(
     minHits === 0
-      ? "PEACE requires a no-hit sequence where available."
-      : `PEACE requires the fewest unavoidable hits: ${minHits}.`
+      ? "PEACE avoids captures among turns that use every playable die."
+      : `Use every playable die, even in PEACE: ${minHits} unavoidable capture(s).`
   );
 
-  const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
-  best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
-
-  if (maxBearOffs > 0) explanation.push(`Bear-off priority applied: ${maxBearOffs} checker(s) off.`);
+  if (bearOffPriorityAtTurnStart) {
+    const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
+    best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
+    if (maxBearOffs > 0) explanation.push(`All checkers started home: maximize bearing off (${maxBearOffs}).`);
+  }
   return best;
 }
 
@@ -969,7 +943,8 @@ function analyzeLegality(
   mode: Mode,
   bar: BarState,
   off: OffState,
-  controlState: ControlState
+  controlState: ControlState,
+  bearOffPriorityAtTurnStart = allHome(board, player, bar)
 ): LegalAnalysis {
   const explanation: string[] = [];
 
@@ -991,11 +966,27 @@ function analyzeLegality(
   const maxMovesUsed = Math.max(...best.map((sequence) => sequence.moves.length));
   explanation.push(`Maximum dice-use rule: ${maxMovesUsed} move(s) available.`);
 
-  best = enforceLargerDieRule(board, player, dice, bar, off, best, explanation);
-  best = filterByWarPeace(best, mode, controlState, explanation);
+  best = filterByWarPeace(best, mode, controlState, explanation, bearOffPriorityAtTurnStart);
   best = filterByMaximumMoves(best);
 
   return { legalSequences: best, legalMoves: dedupeFirstMoves(best), explanation };
+}
+
+function savedTurnStartedAllHome(saved: SavedGameState): boolean {
+  if (typeof saved.bearOffPriorityAtTurnStart === "boolean") return saved.bearOffPriorityAtTurnStart;
+  if (!allHome(saved.board, saved.currentPlayer, saved.bar)) return false;
+  if (saved.turnMoveCount === 0) return true;
+
+  // Older saves have no turn-start flag. A checker cannot leave its home board
+  // during its own turn, so any bar entry or move from outside proves this turn
+  // began outside. An incomplete historical log must not create a new duty.
+  if (saved.moveLog.length < saved.turnMoveCount) return false;
+  return saved.moveLog.slice(-saved.turnMoveCount).every((entry) => {
+    const from = entry.move.from;
+    return entry.player === saved.currentPlayer && !entry.move.isBarEntry &&
+      Number.isInteger(from) && from >= 0 && from < 24 &&
+      (saved.currentPlayer === "White" ? from >= 18 : from <= 5);
+  });
 }
 
 function rollDie(): number {
@@ -1068,15 +1059,19 @@ function playHitSound(): void {
 }
 
 function playCaptureSound(): void {
-  playTone(140, 0.055, 0.2, "square", 0);
-  playTone(72, 0.14, 0.16, "sawtooth", 0.045);
-  playTone(220, 0.055, 0.12, "triangle", 0.13);
+  // A low strike followed by a metallic chime, with a bounded volume.
+  playTone(98, 0.32, 0.15, "triangle");
+  playTone(196, 0.24, 0.08, "square");
+  playTone(587.33, 0.18, 0.07, "sine", 0.035);
+  playTone(293.66, 0.4, 0.1, "triangle", 0.09);
 }
 
 function playPeaceViolationSound(): void {
-  playTone(560, 0.08, 0.18, "square", 0);
-  playTone(280, 0.11, 0.16, "sawtooth", 0.075);
-  playTone(760, 0.12, 0.14, "triangle", 0.18);
+  // A softer descending minor phrase marks the cost of a PEACE capture.
+  playTone(220, 0.38, 0.15, "triangle");
+  playTone(196, 0.4, 0.13, "sine", 0.2);
+  playTone(174.61, 0.65, 0.13, "triangle", 0.42);
+  playTone(130.81, 0.85, 0.09, "sine", 0.42);
 }
 
 function playWinFanfare(): void {
@@ -1248,7 +1243,8 @@ function runEngineSelfTests(): string[] {
   peaceBoard[5] = { owner: "Black", count: 1 };
   peaceBoard[8] = { owner: "Black", count: 2 };
   const peaceAnalysis = analyzeLegality(peaceBoard, "White", [1, 4], "PEACE", HOME_BAR, HOME_OFF, "NORMAL");
-  assert("PEACE prefers no-hit first moves where available", peaceAnalysis.legalMoves.every((move) => !move.isHit));
+  assert("PEACE uses both dice despite this unavoidable capture", peaceAnalysis.legalSequences.length > 0 &&
+    peaceAnalysis.legalSequences.every((sequence) => sequence.moves.length === 2 && sequence.totalHits === 1));
 
   const barBoard = emptyBoard();
   barBoard[0] = { owner: "Black", count: 1 };
@@ -1274,6 +1270,7 @@ export default function App() {
   const [gamePhase, setGamePhase] = useState<GamePhase>("OPENING_ROLL");
   const [remainingDice, setRemainingDice] = useState<number[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
+  const [pendingBearOffMoves, setPendingBearOffMoves] = useState<Move[]>([]);
   const [draggingPoint, setDraggingPoint] = useState<number | null>(null);
   const [hoverPoint, setHoverPoint] = useState<number | null>(null);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
@@ -1283,6 +1280,7 @@ export default function App() {
   const [showMoveLog, setShowMoveLog] = useState(true);
   const [moveLog, setMoveLog] = useState<MoveLogEntry[]>([]);
   const [turnMoveCount, setTurnMoveCount] = useState(0);
+  const [bearOffPriorityAtTurnStart, setBearOffPriorityAtTurnStart] = useState(false);
   const [turnBanner, setTurnBanner] = useState<string | null>(null);
   const [diceRolling, setDiceRolling] = useState(false);
   const [animatingMoveKey, setAnimatingMoveKey] = useState<string | null>(null);
@@ -1304,6 +1302,10 @@ export default function App() {
   const [recordBook, setRecordBook] = useState<PlayerRecordBook>(() => loadPlayerRecordBook());
   const [showRecords, setShowRecords] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => readStoredValue("warPeaceBackgammonSoundEnabledV1") !== "off");
+  const [narrationEnabled, setNarrationEnabled] = useState(() => readStoredValue("warPeaceBackgammonNarrationEnabledV1") !== "off");
+  const [narration, setNarration] = useState<NarrationEvent | null>(null);
+  const narrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const narrationIdRef = useRef(0);
   const [showTestingPanel, setShowTestingPanel] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [saveAvailable, setSaveAvailable] = useState(true);
@@ -1383,6 +1385,15 @@ export default function App() {
   }, [soundEnabled]);
 
   useEffect(() => {
+    writeStoredValue("warPeaceBackgammonNarrationEnabledV1", narrationEnabled ? "on" : "off");
+    if (!narrationEnabled) setNarration(null);
+  }, [narrationEnabled]);
+
+  useEffect(() => () => {
+    if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
+  }, []);
+
+  useEffect(() => {
     if (PUBLIC_SHOW_TESTING_TOOLS) console.table(runEngineSelfTests().map((result) => ({ result })));
   }, []);
 
@@ -1396,11 +1407,12 @@ export default function App() {
   }, []);
 
   const legalAnalysis = useMemo(
-    () => analyzeLegality(board, currentPlayer, remainingDice, mode, bar, off, controlState),
-    [board, currentPlayer, remainingDice, mode, bar, off, controlState]
+    () => analyzeLegality(board, currentPlayer, remainingDice, mode, bar, off, controlState, bearOffPriorityAtTurnStart),
+    [board, currentPlayer, remainingDice, mode, bar, off, controlState, bearOffPriorityAtTurnStart]
   );
 
   const legalMoves = legalAnalysis.legalMoves;
+  const computerLandmineProfile = useMemo(() => getLandmineProfile({ board, bar, off }, "Black"), [board, bar, off]);
   const legalOriginPoints = useMemo(
     () =>
       Array.from(
@@ -1421,13 +1433,6 @@ export default function App() {
 
     if (legalMoves.length === 1) {
       return "Only legal move available.";
-    }
-
-    const availableDice = uniqueDice(remainingDice);
-    const legalDice = uniqueDice(legalMoves.map((move) => move.die));
-
-    if (availableDice.length > 1 && legalDice.length === 1 && legalDice[0] === availableDice[0]) {
-      return `Must use ${legalDice[0]} first.`;
     }
 
     return null;
@@ -1497,7 +1502,10 @@ export default function App() {
     setDiceRolling(false);
     setDraggingPoint(null);
     setDragPosition(null);
+    setPendingBearOffMoves([]);
     setTurnBanner(null);
+    setNarration(null);
+    if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
     if (autoPassTimerRef.current !== null) clearTimeout(autoPassTimerRef.current);
     if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
     if (autoTestBatchResumeTimerRef.current !== null) {
@@ -1578,6 +1586,15 @@ export default function App() {
     if (soundEnabled) playClickSound();
   }
 
+  function narrate(event: Omit<NarrationEvent, "id">): void {
+    if (!narrationEnabled || autoTestRunning) return;
+    if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
+    setTurnBanner(null);
+    if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
+    setNarration({ ...event, id: ++narrationIdRef.current });
+    narrationTimerRef.current = setTimeout(() => setNarration(null), 4800);
+  }
+
   function soundError(): void {
     if (soundEnabled) playErrorSound();
   }
@@ -1611,7 +1628,8 @@ export default function App() {
   function saveGame(announce = true): void {
     if (!setupComplete || winner || autoTestRunning || diagnosticGameRef.current) return;
     const savedGame: SavedGameState = {
-      version: 2,
+      version: 3,
+      bearOffPriorityAtTurnStart,
       playSetupMode,
       computerStrategy,
       whitePlayerName,
@@ -1665,7 +1683,7 @@ export default function App() {
       saveGame(false);
     }
   }, [board, bar, off, mode, currentPlayer, controller, controlState, gamePhase, remainingDice,
-    moveLog, turnMoveCount, openingDice, openingWinner, awaitingModeChoice, winner, diceRolling,
+    moveLog, turnMoveCount, bearOffPriorityAtTurnStart, openingDice, openingWinner, awaitingModeChoice, winner, diceRolling,
     autoTestRunning, playSetupMode, computerStrategy, whitePlayerName, blackPlayerName,
     gameRolls, gamePlayableRolls, gameUnplayableRolls]);
 
@@ -1678,6 +1696,8 @@ export default function App() {
       candidate.openingDice.every(isDie) && candidate.openingDice[0] !== candidate.openingDice[1];
     if ((candidate.whitePlayerName !== undefined && typeof candidate.whitePlayerName !== "string") ||
         (candidate.blackPlayerName !== undefined && typeof candidate.blackPlayerName !== "string") ||
+        (candidate.bearOffPriorityAtTurnStart !== undefined && typeof candidate.bearOffPriorityAtTurnStart !== "boolean") ||
+        (candidate.version === 3 && typeof candidate.bearOffPriorityAtTurnStart !== "boolean") ||
         (candidate.openingDice !== null && !validOpening) ||
         (candidate.openingWinner !== null && !isPlayer(candidate.openingWinner)) ||
         (candidate.winner !== null && !isPlayer(candidate.winner)) ||
@@ -1696,7 +1716,7 @@ export default function App() {
       !["BEAR_OFF", "RESIGNATION"].includes(candidate.finalResult.reason)
     )) return false;
     return (
-      (candidate.version === 1 || candidate.version === 2) &&
+      (candidate.version === 1 || candidate.version === 2 || candidate.version === 3) &&
       Array.isArray(candidate.board) &&
       candidate.board.length === 24 &&
       candidate.board.every((point) => point && Number.isInteger(point.count) && point.count >= 0 && point.count <= 15 &&
@@ -1770,6 +1790,7 @@ export default function App() {
         remainingDiceAfter: [...entry.remainingDiceAfter],
       })));
       setTurnMoveCount(parsed.turnMoveCount);
+      setBearOffPriorityAtTurnStart(savedTurnStartedAllHome(parsed));
       setTurnBanner(null);
       setDiceRolling(false);
       setAnimatingMoveKey(null);
@@ -1997,6 +2018,7 @@ export default function App() {
     setShowAnalysis(false);
     setMoveLog([]);
     setTurnMoveCount(0);
+    setBearOffPriorityAtTurnStart(false);
     setTurnBanner(null);
     setDiceRolling(false);
     setAnimatingMoveKey(null);
@@ -2067,6 +2089,7 @@ export default function App() {
     setHistory([]);
     setMoveLog([]);
     setTurnMoveCount(0);
+    setBearOffPriorityAtTurnStart(false);
     setOpeningDice([whiteDie, blackDie]);
     setOpeningWinner(winner);
     setAwaitingModeChoice(true);
@@ -2101,6 +2124,7 @@ export default function App() {
     setHistory([]);
     setMoveLog([]);
     setTurnMoveCount(0);
+    setBearOffPriorityAtTurnStart(true);
     setOpeningDice(null);
     setOpeningWinner(null);
     setAwaitingModeChoice(false);
@@ -2110,7 +2134,7 @@ export default function App() {
     setWinner(null);
     setFinalResult(null);
     setConfirmResign(false);
-    setMessage("BEAR-OFF TEST: White should bear off as many as possible.");
+    setMessage("BEAR-OFF TEST: White began this turn with all checkers home; maximize bearing off.");
   }
 
   function loadPeaceControlTest(): void {
@@ -2134,6 +2158,7 @@ export default function App() {
     setHistory([]);
     setMoveLog([]);
     setTurnMoveCount(0);
+    setBearOffPriorityAtTurnStart(false);
     setOpeningDice(null);
     setOpeningWinner(null);
     setAwaitingModeChoice(false);
@@ -2143,7 +2168,7 @@ export default function App() {
     setWinner(null);
     setFinalResult(null);
     setConfirmResign(false);
-    setMessage("PEACE TEST: no-hit sequence should be preferred if available.");
+    setMessage("PEACE TEST: Use both dice. One capture is unavoidable; Enemy Control then applies.");
   }
 
   function chooseMode(chosenMode: Mode, automated = false): void {
@@ -2154,7 +2179,8 @@ export default function App() {
       return;
     }
 
-    const openingTurnAnalysis = analyzeLegality(board, openingWinner, openingDice, chosenMode, bar, off, "NORMAL");
+    const openingAllHome = allHome(board, openingWinner, bar);
+    const openingTurnAnalysis = analyzeLegality(board, openingWinner, openingDice, chosenMode, bar, off, "NORMAL", openingAllHome);
     recordGameRoll(openingTurnAnalysis.legalMoves.length > 0);
     recordAutoTestRoll(openingWinner, openingDice, openingTurnAnalysis.legalMoves.length > 0, bar);
 
@@ -2163,6 +2189,7 @@ export default function App() {
     setController(openingWinner);
     setControlState("NORMAL");
     setRemainingDice(openingDice);
+    setBearOffPriorityAtTurnStart(openingAllHome);
     setAwaitingModeChoice(false);
     setGamePhase("OPENING_TURN");
     setOpeningTurnMoveMade(false);
@@ -2182,6 +2209,7 @@ export default function App() {
     if (soundEnabled) playDiceSound();
 
     const nextPlayer = opponent(currentPlayer);
+    const nextTurnAllHome = allHome(board, nextPlayer, bar);
     let d1 = rollDie();
     let d2 = rollDie();
 
@@ -2201,7 +2229,7 @@ export default function App() {
 
     if (rolledDoubles) {
       const switchedMode: Mode = mode === "WAR" ? "PEACE" : "WAR";
-      const switchedModeAnalysis = analyzeLegality(board, nextPlayer, dice, switchedMode, bar, off, "NORMAL");
+      const switchedModeAnalysis = analyzeLegality(board, nextPlayer, dice, switchedMode, bar, off, "NORMAL", nextTurnAllHome);
 
       if (switchedModeAnalysis.legalMoves.length > 0) {
         nextMode = switchedMode;
@@ -2215,7 +2243,7 @@ export default function App() {
       }
     }
 
-    const nextLegalAnalysis = analyzeLegality(board, nextPlayer, dice, nextMode, bar, off, "NORMAL");
+    const nextLegalAnalysis = analyzeLegality(board, nextPlayer, dice, nextMode, bar, off, "NORMAL", nextTurnAllHome);
     const noLegalMoves = nextLegalAnalysis.legalMoves.length === 0;
     recordGameRoll(!noLegalMoves);
     recordAutoTestRoll(nextPlayer, dice, !noLegalMoves, bar);
@@ -2225,6 +2253,7 @@ export default function App() {
     setController(nextPlayer);
     setControlState("NORMAL");
     setRemainingDice(dice);
+    setBearOffPriorityAtTurnStart(nextTurnAllHome);
     setOpeningDice(null);
     setOpeningWinner(null);
     setOpeningTurnMoveMade(false);
@@ -2246,6 +2275,10 @@ export default function App() {
   function undoMove(): void {
     if (!canUndo || rollLockRef.current) return;
 
+    setPendingBearOffMoves([]);
+    setNarration(null);
+    if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
+
     const previous = history[history.length - 1];
     setBoard(previous.board);
     setRemainingDice(previous.dice);
@@ -2255,6 +2288,7 @@ export default function App() {
     setControlState(previous.controlState);
     setMoveLog(previous.moveLog);
     setTurnMoveCount(previous.turnMoveCount);
+    setBearOffPriorityAtTurnStart(previous.bearOffPriorityAtTurnStart);
     setOpeningTurnMoveMade(!(openingDice !== null && previous.moveLog.length === 0));
     setOpeningTurnRequiresMove(openingDice !== null && previous.moveLog.length === 0);
     setLastMove(previous.lastMove);
@@ -2321,6 +2355,7 @@ export default function App() {
         moveLog: [...moveLog],
         lastMove,
         turnMoveCount,
+        bearOffPriorityAtTurnStart,
       },
     ]);
 
@@ -2374,7 +2409,8 @@ export default function App() {
       mode,
       result.bar,
       result.off,
-      nextControlState
+      nextControlState,
+      bearOffPriorityAtTurnStart
     );
 
     setLastMove(move);
@@ -2405,15 +2441,42 @@ export default function App() {
     setController(nextController);
     setControlState(nextControlState);
     if (soundEnabled) {
-      if (peaceViolationTriggersEnemyControl) playPeaceViolationSound();
+      if (move.isHit && mode === "PEACE") playPeaceViolationSound();
       else if (move.isHit) playCaptureSound();
       else playClickSound();
     }
     triggerMoveAnimation(move);
 
-    if (peaceViolationTriggersEnemyControl) flashBanner("PEACE VIOLATION - ENEMY CONTROL", 2200);
-    else if (move.isHit) flashBanner(mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace", 1500);
-    if (move.isBearOff) flashBanner("BEAR OFF");
+    if (move.isHit) {
+      const controlDetail = peaceViolationTriggersEnemyControl
+        ? nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0
+          ? `${nextController} takes Enemy Control for the remaining moves.`
+          : "No playable moves remain for Enemy Control."
+        : controlState === "ENEMY_CONTROL"
+          ? `${controller} chose this move under Enemy Control.`
+          : `${opponent(currentPlayer)} must re-enter from the bar.`;
+      narrate({
+        kind: mode === "WAR" ? "war-capture" : "peace-capture",
+        title: mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace",
+        detail: `${currentPlayer} captures on point ${move.to + 1}. ${controlDetail}`,
+        player: opponent(currentPlayer),
+      });
+    } else if (move.isBearOff) {
+      narrate({ kind: "bear-off", title: "Checker borne off", detail: `${currentPlayer} has borne off ${result.off[currentPlayer]} of 15 checkers.`, player: currentPlayer });
+    } else if (mode === "PEACE" && controlState === "NORMAL" && narrationEnabled && !autoTestRunning) {
+      const profile = getLandmineProfile(result, currentPlayer);
+      if (profile.exposureAllowed) {
+        const newBlots = result.board.flatMap((point, index) => point.owner === currentPlayer && point.count === 1 &&
+          (board[index].owner !== currentPlayer || board[index].count !== 1) ? [index] : []);
+        const reachable = getRawMoves(result.board, opponent(currentPlayer), [1, 2, 3, 4, 5, 6], result.bar, result.off)
+          .some((candidate) => candidate.isHit && newBlots.includes(candidate.to));
+        if (reachable) narrate({
+          kind: "landmine", title: "A possible PEACE landmine",
+          detail: `${currentPlayer} is ${profile.deficit} pips behind. A forced capture could give them the remaining enemy moves. ${profile.openEntryPoints} re-entry points are open.`,
+          player: currentPlayer,
+        });
+      }
+    }
 
     const completedWinner = checkForWinner(result.off);
     if (completedWinner) {
@@ -2625,229 +2688,22 @@ export default function App() {
     return null;
   }
 
-  function isOpponentHomePoint(player: Player, pointIndex: number): boolean {
-    return player === "White" ? pointIndex >= 18 : pointIndex <= 5;
-  }
-
-  function countSingleBlots(testBoard: Point[], player: Player): number {
-    return testBoard.filter((point) => point.owner === player && point.count === 1).length;
-  }
-
-  function hasOpponentHomeAnchor(testBoard: Point[], player: Player): boolean {
-    return testBoard.some((point, index) =>
-      point.owner === player && point.count >= 2 && isOpponentHomePoint(player, index)
-    );
-  }
-
-  function isPlayerEntryZone(player: Player, pointIndex: number): boolean {
-    return player === "White" ? pointIndex >= 0 && pointIndex <= 5 : pointIndex >= 18 && pointIndex <= 23;
-  }
-
-  function isPlayerHomeBoard(player: Player, pointIndex: number): boolean {
-    return player === "White" ? pointIndex >= 18 && pointIndex <= 23 : pointIndex >= 0 && pointIndex <= 5;
-  }
-
-  function countOpponentBlotsInEntryZone(testBoard: Point[], player: Player): number {
-    const enemy = opponent(player);
-    return testBoard.filter((point, index) =>
-      isPlayerEntryZone(player, index) && point.owner === enemy && point.count === 1
-    ).length;
-  }
-
-  function countOpenEntryPoints(testBoard: Point[], player: Player): number {
-    const enemy = opponent(player);
-    let open = 0;
-    for (let die = 1; die <= 6; die += 1) {
-      const entry = getEntryPoint(player, die);
-      const point = testBoard[entry];
-      if (!(point.owner === enemy && point.count >= 2)) open += 1;
-    }
-    return open;
-  }
-
-  function isPointHittableByOpponent(testBoard: Point[], player: Player, pointIndex: number): boolean {
-    const enemy = opponent(player);
-
-    for (let die = 1; die <= 6; die += 1) {
-      if (getEntryPoint(enemy, die) === pointIndex) return true;
-
-      const from = enemy === "White" ? pointIndex - die : pointIndex + die;
-      if (from < 0 || from > 23) continue;
-      const point = testBoard[from];
-      if (point.owner === enemy && point.count > 0) return true;
-    }
-
-    return false;
-  }
-
-  function calculateReturnShotPotential(testBoard: Point[], player: Player): number {
-    const entryBlots = countOpponentBlotsInEntryZone(testBoard, player);
-    const openEntries = countOpenEntryPoints(testBoard, player);
-    const closedPenalty = openEntries <= 1 ? -35 : openEntries === 2 ? -18 : 0;
-
-    return entryBlots * 18 + openEntries * 4 + closedPenalty;
-  }
-
-  function getOnePointIndex(player: Player): number {
-    return player === "White" ? 23 : 0;
-  }
-
-  function countCheckersOnOnePoint(testBoard: Point[], player: Player): number {
-    const onePoint = testBoard[getOnePointIndex(player)];
-    return onePoint.owner === player ? onePoint.count : 0;
-  }
-
-  function countDirectShotBlots(testBoard: Point[], player: Player): number {
-    return testBoard.reduce((total, point, index) => {
-      if (point.owner !== player || point.count !== 1) return total;
-      return total + (isPointHittableByOpponent(testBoard, player, index) ? 1 : 0);
-    }, 0);
-  }
-
-  function isLateBearoffRace(testBoard: Point[], testBar: BarState, testOff: OffState, player: Player): boolean {
-    const enemy = opponent(player);
-    const playerAllHome = allHome(testBoard, player, testBar);
-    const enemyAllHome = allHome(testBoard, enemy, testBar);
-    const playerMostlyHomeOrOff = testOff[player] >= 6 || playerAllHome;
-    const enemyMostlyHomeOrOff = testOff[enemy] >= 6 || enemyAllHome;
-
-    return (
-      playerAllHome ||
-      (playerMostlyHomeOrOff && enemyMostlyHomeOrOff) ||
-      (testOff[player] + testOff[enemy] >= 12)
-    );
-  }
-
-  function scoreAutoTestMove(move: Move, strategyOverride: AutoTestStrategy = autoTestStrategy): number {
-    const activeStrategy = strategyOverride;
-    const beforePips = calculatePipCount(board, currentPlayer, bar);
-    const opponentPips = calculatePipCount(board, opponent(currentPlayer), bar);
-    const deficit = Math.max(0, beforePips - opponentPips);
-    const beforeBlots = countSingleBlots(board, currentPlayer);
-    const beforeOnePointCheckers = countCheckersOnOnePoint(board, currentPlayer);
-    const beforeDirectShotBlots = countDirectShotBlots(board, currentPlayer);
-    const applied = applyMove(board, move, currentPlayer, bar, off);
-    const afterPips = calculatePipCount(applied.board, currentPlayer, applied.bar);
-    const afterBlots = countSingleBlots(applied.board, currentPlayer);
-    const afterOnePointCheckers = countCheckersOnOnePoint(applied.board, currentPlayer);
-    const afterDirectShotBlots = countDirectShotBlots(applied.board, currentPlayer);
-    const pipGain = beforePips - afterPips;
-    const onePointReduction = Math.max(0, beforeOnePointCheckers - afterOnePointCheckers);
-    const newDirectShotBlots = Math.max(0, afterDirectShotBlots - beforeDirectShotBlots);
-    const lateBearoffRace = isLateBearoffRace(board, bar, off, currentPlayer);
-    const playerIsBehind = deficit > 0;
-    const landingPoint =
-      move.isBearOff || move.to < 0 || move.to > 23 ? null : applied.board[move.to];
-
-    let score = pipGain * 2;
-
-    if (move.isBearOff) score += 80;
-    if (move.isBarEntry) score += 45;
-    if (move.isHit) score += mode === "WAR" ? 95 : 45;
-
-    // Late bear-off/race correction:
-    // A trailing computer must not cling to a safe stack on the 1-point.
-    // When behind, speed and clearing the 1-point outrank ordinary blot fear.
-    if (lateBearoffRace && playerIsBehind) {
-      score += pipGain * 8;
-      if (move.isBearOff) score += deficit >= 15 ? 220 : 150;
-      score += onePointReduction * (deficit >= 15 ? 160 : 110);
-      score -= afterOnePointCheckers * (deficit >= 15 ? 28 : 18);
-      score -= newDirectShotBlots * (deficit >= 15 ? 35 : 70);
-
-      if (beforeOnePointCheckers >= 3 && onePointReduction > 0) score += 90;
-      if (beforeOnePointCheckers >= 3 && afterOnePointCheckers === 1) score += 65;
-      if (deficit >= 25 && move.isBearOff) score += 110;
-    }
-
-    if (activeStrategy === "RANDOM_LEGAL") {
-      score += Math.random() * 100;
-      return score;
-    }
-
-    if (mode === "PEACE" && move.isHit) score -= 40;
-
-    const newBlots = Math.max(0, afterBlots - beforeBlots);
-    const createsLandingBlot =
-      landingPoint !== null &&
-      landingPoint.owner === currentPlayer &&
-      landingPoint.count === 1;
-
-    if (activeStrategy === "BALANCED") {
-      score -= newBlots * 16;
-      if (createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score -= 25;
-      if (deficit >= 40 && createsLandingBlot && move.to >= 0 && isOpponentHomePoint(currentPlayer, move.to)) score += 18;
-    }
-
-    if (activeStrategy === "CONTROLLED_COMEBACK") {
-      const landingInMyHome = createsLandingBlot && move.to >= 0 && isPlayerHomeBoard(currentPlayer, move.to);
-      const landingInMyEntryZone = createsLandingBlot && move.to >= 0 && isPlayerEntryZone(currentPlayer, move.to);
-      const landingCanBeHit = createsLandingBlot && move.to >= 0 && isPointHittableByOpponent(applied.board, currentPlayer, move.to);
-      const lateBearingOffPhase =
-        off[currentPlayer] >= 5 ||
-        off[opponent(currentPlayer)] >= 5 ||
-        allHome(board, currentPlayer, bar) ||
-        allHome(board, opponent(currentPlayer), bar);
-      const currentPipGap = Math.abs(beforePips - opponentPips);
-      const runawayRisk = currentPipGap >= 120 || beforePips >= 220 || opponentPips >= 220;
-      const hasAnchor = hasOpponentHomeAnchor(board, currentPlayer);
-      const openEntryPoints = countOpenEntryPoints(board, currentPlayer);
-      const opponentEntryBlots = countOpponentBlotsInEntryZone(board, currentPlayer);
-      const returnShotPotential = calculateReturnShotPotential(board, currentPlayer);
-      const exposureMayBeBait =
-        landingCanBeHit &&
-        deficit >= 50 &&
-        openEntryPoints >= 3 &&
-        (opponentEntryBlots > 0 || returnShotPotential >= 20 || hasAnchor || deficit >= 90);
-
-      // Controlled Comeback is now risk-adjusted, not merely reckless.
-      // About one roll in six is a double, so the mode may change soon; a trailing player
-      // may accept exposure, but only when being hit can create return-shot/contact value.
-      score -= newBlots * (lateBearingOffPhase || runawayRisk ? 26 : 14);
-      if (landingInMyHome) score -= lateBearingOffPhase || runawayRisk ? 55 : 18;
-      if (landingInMyEntryZone && deficit < 60) score -= 10;
-
-      if (exposureMayBeBait && !lateBearingOffPhase && !runawayRisk) {
-        score += Math.min(46, 14 + returnShotPotential);
-        if (mode === "WAR") score += 14;
-        if (mode === "PEACE" && deficit >= 70) score += 7;
-      }
-
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 40 && createsLandingBlot && mode === "WAR") score += 8;
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 70 && createsLandingBlot && exposureMayBeBait) score += 12;
-      if (!lateBearingOffPhase && !runawayRisk && deficit >= 95 && exposureMayBeBait) score += 16;
-
-      if (deficit < 40 && landingCanBeHit) score -= 28;
-      if (deficit < 60 && newBlots >= 2) score -= 24;
-      if (openEntryPoints <= 2 && landingCanBeHit) score -= 30;
-      if (lateBearingOffPhase && !move.isBearOff && createsLandingBlot) score -= 35;
-      if (runawayRisk && !move.isBearOff && landingCanBeHit) score -= 38;
-      if (runawayRisk && move.isBearOff) score += 35;
-    }
-
-    score += Math.random() * 8;
-    return score;
-  }
-
   function chooseAutoTestMove(strategyOverride: AutoTestStrategy = autoTestStrategy): Move | null {
-    if (legalMoves.length === 0) return null;
-
-    const barEntryMoves = legalMoves.filter((move) => move.isBarEntry);
-    const candidateMoves = barEntryMoves.length > 0 ? barEntryMoves : legalMoves;
-
-    let bestMove = candidateMoves[0];
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    for (const move of candidateMoves) {
-      const moverUtility = scoreAutoTestMove(move, strategyOverride);
-      const score = controller === currentPlayer ? moverUtility : -moverUtility;
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
-    }
-
-    return bestMove;
+    return chooseStrategicMove({
+      position: { board, bar, off },
+      player: currentPlayer,
+      controller,
+      mode,
+      dice: remainingDice,
+      strategy: strategyOverride,
+      legalSequences: legalAnalysis.legalSequences,
+      applyMove,
+      rawMoves: getRawMoves,
+      controlledContinuations: (position, dice) => analyzeLegality(
+        position.board, currentPlayer, dice, mode, position.bar, position.off,
+        "ENEMY_CONTROL", bearOffPriorityAtTurnStart
+      ).legalSequences,
+    });
   }
 
   function stopAutoTestWithError(reason: string): void {
@@ -3077,6 +2933,7 @@ export default function App() {
   function beginDrag(index: number, event?: React.PointerEvent<HTMLDivElement>): void {
     if (!event || !setupComplete || winner || diceRolling || confirmResign || isComputerController || autoTestRunning || awaitingModeChoice || bar[currentPlayer] > 0) return;
     if (board[index].owner !== currentPlayer || !legalMoves.some((move) => move.from === index)) return;
+    setPendingBearOffMoves([]);
     pendingDragRef.current = { point: index, x: event.clientX, y: event.clientY };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }
@@ -3090,14 +2947,14 @@ export default function App() {
     const tray = element?.closest("[data-bear-off-player]") as HTMLElement | null;
     const point = element?.closest("[data-point-index]") as HTMLElement | null;
     const dropIndex = point?.dataset.pointIndex === undefined ? null : Number(point.dataset.pointIndex);
-    const move = legalMoves.find((candidate) => candidate.from === draggingPoint && (
+    const moves = legalMoves.filter((candidate) => candidate.from === draggingPoint && (
       candidate.isBearOff ? tray?.dataset.bearOffPlayer === currentPlayer : candidate.to === dropIndex
     ));
     const source = draggingPoint;
     setDraggingPoint(null);
     setHoverPoint(null);
     setDragPosition(null);
-    if (move) { executeMove(move); return; }
+    if (moves.length > 0) { chooseHumanMove(moves); return; }
     setSelectedPoint(source);
     if (dropIndex !== source) {
       showLegalMoveHelp(source);
@@ -3305,6 +3162,7 @@ export default function App() {
   function handlePointClick(index: number): void {
     if (performance.now() < ignorePointClickUntilRef.current || !setupComplete || diceRolling || confirmResign || autoTestRunning) return;
     if (isComputerController) { setMessage("Computer is thinking."); return; }
+    setPendingBearOffMoves([]);
 
     const completedWinner = winner ?? checkForWinner(off);
     if (completedWinner) {
@@ -3353,12 +3211,12 @@ export default function App() {
       return;
     }
 
-    const move = legalMoves.find((candidate) => {
+    const moves = legalMoves.filter((candidate) => {
       if (candidate.isBearOff) return candidate.from === selectedPoint && index === selectedPoint;
       return candidate.from === selectedPoint && candidate.to === index;
     });
 
-    if (!move) {
+    if (moves.length === 0) {
       if (board[index].owner === currentPlayer && legalMoves.some((candidate) => candidate.from === index)) {
         setSelectedPoint(index === selectedPoint ? null : index);
         setAssistSourcePoint(null);
@@ -3370,24 +3228,41 @@ export default function App() {
       return;
     }
 
-    executeMove(move);
+    chooseHumanMove(moves);
+  }
+
+  function chooseHumanMove(moves: Move[]): void {
+    if (isComputerController || diceRolling || confirmResign || autoTestRunning || !setupComplete || winner !== null) return;
+    const candidates = moves.filter((move) => legalMoves.some((legal) => moveKey(legal) === moveKey(move)));
+    if (candidates.length === 0) { setPendingBearOffMoves([]); return; }
+    if (candidates.length > 1 && candidates.every((move) => move.isBearOff)) {
+      const options = [...new Map(candidates.map((move) => [move.die, move])).values()].sort((a, b) => a.die - b.die);
+      if (options.length > 1) {
+        setPendingBearOffMoves(options);
+        setSelectedPoint(options[0].from);
+        setMessage(`Choose which die to use to bear off from point ${options[0].from + 1}. Either highlighted choice is legal.`);
+        return;
+      }
+    }
+    setPendingBearOffMoves([]);
+    executeMove(candidates[0]);
   }
 
   function handleBearOffTrayClick(player: Player): void {
     if (isComputerController || diceRolling || confirmResign || autoTestRunning || !setupComplete) return;
     if (player !== currentPlayer || remainingDice.length === 0 || awaitingModeChoice || winner !== null) return;
 
-    const bearOffMove = selectedPoint === null
-      ? null
-      : legalMoves.find((move) => move.isBearOff && move.from === selectedPoint);
+    const bearOffMoves = selectedPoint === null
+      ? []
+      : legalMoves.filter((move) => move.isBearOff && move.from === selectedPoint);
 
-    if (!bearOffMove) {
+    if (bearOffMoves.length === 0) {
       showLegalMoveHelp(selectedPoint);
       setMessage("Select a highlighted checker that can bear off.");
       return;
     }
 
-    executeMove(bearOffMove);
+    chooseHumanMove(bearOffMoves);
   }
 
   function getDieOwnerForDisplay(value: number, index: number): Player {
@@ -3425,24 +3300,30 @@ export default function App() {
   function renderPoint(index: number, isTop: boolean) {
     const point = board[index];
     const source = draggingPoint ?? selectedPoint ?? assistSourcePoint;
-    const isSelected = selectedPoint === index;
-    const isOrigin = !isComputerController && !diceRolling && !winner && legalOriginPoints.includes(index);
-    const destination = !isComputerController && !diceRolling && !winner && legalMoves.find((move) =>
+    const canShowMoves = setupComplete && humanCanAct && !winner && !awaitingModeChoice;
+    const isSelected = canShowMoves && source === index;
+    const isOrigin = canShowMoves && legalOriginPoints.includes(index);
+    const isRequiredOrigin = isOrigin && legalOriginPoints.length === 1;
+    const destination = canShowMoves && legalMoves.find((move) =>
       bar[currentPlayer] > 0 ? move.isBarEntry && move.to === index :
-      source !== null ? move.from === source && !move.isBearOff && move.to === index :
-      legalHelpActive && !move.isBearOff && move.to === index
+      source !== null && move.from === source && !move.isBearOff && move.to === index
     );
+    const wasOrigin = lastMove !== null && !lastMove.isBarEntry && lastMove.from === index;
+    const wasDestination = lastMove !== null && !lastMove.isBearOff && lastMove.to === index;
     const visibleCount = Math.min(point.count, 5) - (draggingPoint === index ? 1 : 0);
+    const moveDescription = destination ? ", legal destination" + (destination.isHit ? ", capture" : "") :
+      isSelected ? ", selected source" : isRequiredOrigin ? ", required source" : isOrigin ? ", available to move" : "";
     return (
       <div key={index} data-point-index={index} data-selected={isSelected} data-legal-origin={isOrigin}
-        data-legal-destination={Boolean(destination)} role="button" tabIndex={setupComplete ? 0 : -1}
-        aria-label={"Point " + (index + 1) + ": " + (point.owner ? point.count + " " + point.owner + " checkers" : "empty") + (destination ? ", legal destination" : isOrigin ? ", available to move" : "")}
+        data-legal-destination={Boolean(destination)} data-last-origin={wasOrigin} data-last-destination={wasDestination}
+        role="button" tabIndex={setupComplete ? 0 : -1}
+        aria-label={"Point " + (index + 1) + ": " + (point.owner ? point.count + " " + point.owner + " checkers" : "empty") + moveDescription + (wasOrigin ? ", last move started here" : wasDestination ? ", last move ended here" : "")}
         aria-pressed={isSelected}
         onClick={() => handlePointClick(index)}
         onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handlePointClick(index); } }}
         onPointerDown={(event) => beginDrag(index, event)}
         onPointerMove={updateDragPosition} onPointerUp={finishDrag} onPointerCancel={cancelDrag}
-        className={"board-point " + (isTop ? "point-top" : "point-bottom") + (isSelected ? " point-selected" : "") + (destination ? " point-destination" : "") + (hoverPoint === index && destination ? " point-hover" : "")}>
+        className={"board-point " + (isTop ? "point-top" : "point-bottom") + (isOrigin ? " point-origin" : "") + (isSelected ? " point-selected" : "") + (destination ? " point-destination" + (destination.isHit ? " point-capture" : "") : "") + (hoverPoint === index && destination ? " point-hover" : "")}>
         <span className={"point-triangle " + (index % 2 === 0 ? "point-ivory" : "point-copper")} aria-hidden="true" />
         <span className="point-number" aria-hidden="true">{index + 1}</span>
         <div className="checker-stack" aria-hidden="true">
@@ -3452,8 +3333,10 @@ export default function App() {
               {n === visibleCount - 1 && point.count > 5 && <span className="checker-count">{point.count}</span>}
             </span>)}
         </div>
-        {destination && <span className={"destination-mark " + (destination.isHit ? "destination-capture" : "")} aria-hidden="true" />}
-        {isOrigin && selectedPoint === null && <span className="origin-mark" aria-hidden="true" />}
+        {(wasOrigin || wasDestination) && <span className={"last-move-frame " + (wasDestination ? "last-move-to" : "last-move-from")} aria-hidden="true"><i>{wasDestination ? "TO" : "FROM"}</i></span>}
+        {(isOrigin || destination || isSelected) && <span className="point-move-frame" aria-hidden="true">
+          {(destination || isSelected) && <i>{destination ? destination.isHit ? "×" : "↓" : "✓"}</i>}
+        </span>}
       </div>
     );
   }
@@ -3464,9 +3347,12 @@ export default function App() {
   }
 
   function renderBar(player: Player) {
-    return <button type="button" className={"board-bar " + (bar[player] > 0 ? "bar-occupied" : "")}
-      aria-label={player + " bar: " + bar[player] + " captured checkers"}
-      onClick={() => { if (bar[player] && currentPlayer === player && !isComputerController) {
+    const required = setupComplete && humanCanAct && !winner && !awaitingModeChoice && currentPlayer === player && legalMoves.some((move) => move.isBarEntry);
+    const wasOrigin = Boolean(lastMove?.isBarEntry && moveLog[moveLog.length - 1]?.player === player);
+    return <button type="button" className={"board-bar " + (bar[player] > 0 ? "bar-occupied" : "") + (required ? " bar-required" : "") + (wasOrigin ? " bar-last-origin" : "")}
+      data-legal-origin={required} data-last-origin={wasOrigin}
+      aria-label={player + " bar: " + bar[player] + " captured checkers" + (required ? ", required source; enter onto a cyan framed point" : "") + (wasOrigin ? ", last move started here" : "")}
+      onClick={() => { if (required) {
         setSelectedPoint(null); setLegalHelpActive(true); setMessage("Enter from the bar onto a highlighted point.");
       } }}>
       <span className="bar-word">BAR</span>
@@ -3475,10 +3361,13 @@ export default function App() {
   }
 
   function renderOffTray(player: Player) {
-    const available = player === currentPlayer && !isComputerController && !diceRolling && !winner && legalMoves.some((move) => move.isBearOff);
+    const source = draggingPoint ?? selectedPoint ?? assistSourcePoint;
+    const available = player === currentPlayer && setupComplete && humanCanAct && !winner && source !== null && legalMoves.some((move) => move.isBearOff && move.from === source);
+    const wasDestination = Boolean(lastMove?.isBearOff && moveLog[moveLog.length - 1]?.player === player);
     return <button type="button" data-bear-off-player={player}
-      className={"off-tray " + (available ? "off-tray-available" : "")}
-      aria-label={player + " bear-off tray: " + off[player] + " of 15 off"}
+      data-legal-destination={available} data-last-destination={wasDestination}
+      className={"off-tray " + (available ? "off-tray-available" : "") + (wasDestination ? " off-tray-last-destination" : "")}
+      aria-label={player + " bear-off tray: " + off[player] + " of 15 off" + (available ? ", legal destination for selected checker" : "") + (wasDestination ? ", last move ended here" : "")}
       onClick={() => handleBearOffTrayClick(player)}>
       <span className={"tray-color " + (player === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
       <span>OFF</span><strong>{off[player]}</strong><small>/ 15</small>
@@ -3724,6 +3613,11 @@ export default function App() {
               {turnIsPlayable && <button type="button" className="primary-action" disabled={!canSubmitTurn || !humanCanAct} onClick={submitTurn}>{diceRolling ? "Rolling…" : isComputerController ? "Computer’s turn" : "End turn"}</button>}
               {winner && <button type="button" className="primary-action" onClick={() => { diagnosticGameRef.current = false; resetNewGame(); }}>Play again</button>}
             </div>
+            {humanCanAct && !winner && pendingBearOffMoves.length > 1 && <fieldset className="bear-off-choice" data-testid="bear-off-choice">
+              <legend>Choose a die to bear off</legend>
+              <div>{pendingBearOffMoves.map((move) => <button key={move.die} type="button" className="primary-action" onClick={() => chooseHumanMove([move])}>Use {move.die}</button>)}</div>
+              <button type="button" className="cancel-resign" onClick={() => { setPendingBearOffMoves([]); setMessage("Bearing-off choice cancelled. Choose a move."); }}>Cancel die choice</button>
+            </fieldset>}
             <div className="game-status" role="status" aria-live="polite" data-testid="status">
               {statusText}
               {turnGuidance && !winner && !diceRolling && <small>{turnGuidance}</small>}
@@ -3733,12 +3627,25 @@ export default function App() {
               <button type="button" aria-pressed={soundEnabled} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) playSoundTest(); }}>Sound {soundEnabled ? "on" : "off"}</button>
               <button type="button" aria-expanded={showRecords} onClick={() => setShowRecords((value) => !value)}>Records</button>
               <button type="button" disabled={!canResign || autoTestRunning} onClick={resignGame}>{confirmResign ? "Confirm resign" : "Resign"}</button>
+              <button type="button" className="narration-toggle" aria-pressed={narrationEnabled} onClick={() => setNarrationEnabled((value) => !value)}>Narration {narrationEnabled ? "on" : "off"}</button>
             </div>
+            {narrationEnabled && !winner && playSetupMode.startsWith("COMPUTER_") && computerLandmineProfile.tier !== "NONE" && <section className="tactic-note" aria-label="Computer tactics" data-testid="computer-tactics">
+              <strong>Computer: {computerLandmineProfile.exposureAllowed ? computerLandmineProfile.label : "landmines on hold"}</strong>
+              <p>{computerLandmineProfile.explanation}</p>
+              {mode === "WAR" && <small>WAR captures do not grant Enemy Control.</small>}
+            </section>}
             {confirmResign && <button type="button" className="cancel-resign" onClick={() => { setConfirmResign(false); setMessage("Resignation cancelled. Continue playing."); }}>Keep playing</button>}
             <p className="save-note">{diagnosticGameRef.current ? "Diagnostic game · personal save preserved" : saveAvailable ? "Progress saves on this device." : "Saving unavailable in this browser."}</p>
           </aside>
         </section>
-        <footer className="game-footer"><span>Tap a checker, then a highlighted point. You can also drag.</span><span>White → 24 &nbsp;·&nbsp; Black → 1</span></footer>
+        <div className="move-legend" aria-label="Move highlight guide">
+          <span><i className="legend-source" aria-hidden="true" />Gold dashes: move from</span>
+          <span><i className="legend-selected" aria-hidden="true">✓</i>Selected</span>
+          <span><i className="legend-destination" aria-hidden="true">↓</i>Cyan: move to</span>
+          <span><i className="legend-capture" aria-hidden="true">×</i>Coral: capture</span>
+          <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
+        </div>
+        <footer className="game-footer"><span>Tap a framed source, then a destination. You can also drag.</span><span>White → 24 &nbsp;·&nbsp; Black → 1</span></footer>
 
         {showRecords && <section className="records-panel">
           <div className="section-heading"><h2>Player records</h2><button type="button" onClick={() => setShowRecords(false)}>Close</button></div>
@@ -3749,6 +3656,7 @@ export default function App() {
 
       {setupComplete && draggingPoint !== null && dragPosition && <div className={"drag-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" style={{ left: dragPosition.x, top: dragPosition.y }} />}
       {warningMessage && <div className="game-warning" role="alert">{warningMessage}</div>}
+      {setupComplete && narrationEnabled && narration && <GameNarration key={narration.id} event={narration} onDismiss={() => setNarration(null)} />}
       {setupComplete && turnBanner && <div className={"turn-toast " + (turnBanner.includes("PEACE VIOLATION") ? "toast-control" : "")} role="status">
         <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
         <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? "Prisoner of Peace" : turnBanner}</strong>

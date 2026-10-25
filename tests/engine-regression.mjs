@@ -23,6 +23,7 @@ for (const statement of [...parsedSource.statements].reverse()) {
 const exportNames = [
   'emptyBoard', 'createStartingBoard', 'calculatePipCount', 'allHome',
   'canBearOff', 'getRawMoves', 'analyzeLegality', 'applyMove', 'removeDie',
+  'savedTurnStartedAllHome',
 ];
 const compiled = ts.transpileModule(`${pureSource}\nexport { ${exportNames.join(', ')} };`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
@@ -32,6 +33,7 @@ vm.runInNewContext(compiled.outputText, { exports: engineExports, console }, { f
 const {
   emptyBoard, createStartingBoard, calculatePipCount, allHome, canBearOff,
   getRawMoves, analyzeLegality, applyMove, removeDie,
+  savedTurnStartedAllHome,
 } = engineExports;
 
 function position(white, black, bar = { White: 0, Black: 0 }) {
@@ -48,8 +50,8 @@ function position(white, black, bar = { White: 0, Black: 0 }) {
   return { board, bar, off };
 }
 
-function analyze(state, player, dice, mode = 'WAR', control = 'NORMAL') {
-  return analyzeLegality(state.board, player, dice, mode, state.bar, state.off, control);
+function analyze(state, player, dice, mode = 'WAR', control = 'NORMAL', startedAllHome = allHome(state.board, player, state.bar)) {
+  return analyzeLegality(state.board, player, dice, mode, state.bar, state.off, control, startedAllHome);
 }
 
 function totalCheckers(state, player) {
@@ -113,22 +115,19 @@ test('using both dice takes priority over immediately bearing off the last check
   assert.ok(result.legalSequences.every(sequence => sequence.moves[1].isBearOff));
 });
 
-test('the higher die is mandatory when only one of two different dice can be used', () => {
+test('either die may be used when only one move is possible and the capture/off priorities are equal', () => {
   const state = position({ 23: 1 }, { 0: 15 });
   for (const mode of ['WAR', 'PEACE']) {
     const result = analyze(state, 'White', [1, 6], mode);
-    assert.equal(result.legalMoves.length, 1);
-    assert.equal(result.legalMoves[0].die, 6);
-    assert.equal(result.legalMoves[0].isBearOff, true);
+    assert.deepEqual(moveValues(result.legalMoves), ['23>-1:1', '23>-1:6']);
+    assert.ok(result.legalMoves.every(move => move.isBearOff));
   }
 });
 
-test('higher-die priority also applies when both bar entries work but neither can be followed', () => {
+test('neither bar-entry die is privileged when both work but neither can be followed', () => {
   const state = position({}, { 2: 2 }, { White: 1, Black: 0 });
   const result = analyze(state, 'White', [1, 2]);
-  assert.equal(result.legalMoves.length, 1);
-  assert.equal(result.legalMoves[0].die, 2);
-  assert.equal(result.legalMoves[0].to, 1);
+  assert.deepEqual(moveValues(result.legalMoves), ['-1>0:1', '-1>1:2']);
 });
 
 test('WAR chooses the full-turn continuation with the most captures', () => {
@@ -170,11 +169,11 @@ test('a forced PEACE bar capture stays legal, and Enemy Control permits addition
   assert.ok(controlled.legalMoves.some(move => move.isHit));
 });
 
-test('Enemy Control suspends doctrine but retains maximum dice-use and higher-die requirements', () => {
+test('Enemy Control suspends doctrine, retains maximum dice-use, and has no higher-die preference', () => {
   const lastTwoPips = position({ 22: 1 }, { 0: 15 });
   assert.deepEqual(moveValues(analyze(lastTwoPips, 'White', [1, 2], 'PEACE', 'ENEMY_CONTROL').legalMoves), ['22>23:1']);
   const lastPip = position({ 23: 1 }, { 0: 15 });
-  assert.equal(analyze(lastPip, 'White', [1, 6], 'WAR', 'ENEMY_CONTROL').legalMoves[0].die, 6);
+  assert.deepEqual(moveValues(analyze(lastPip, 'White', [1, 6], 'WAR', 'ENEMY_CONTROL').legalMoves), ['23>-1:1', '23>-1:6']);
 });
 
 test('bearing off requires all active checkers home and an empty own bar', () => {
@@ -212,6 +211,96 @@ test('bear-off priority chooses two checkers off over one off when both use two 
     assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2 && sequence.totalBearOffs === 2));
     assert.ok(result.legalMoves.every(move => move.isBearOff));
   }
+});
+
+test('6-4 may move a home checker with 4 before bringing the last outside checker home with 6', () => {
+  for (const player of ['White', 'Black']) {
+    const state = player === 'White'
+      ? position({ 17: 1, 18: 1, 20: 13 }, { 0: 15 })
+      : position({ 23: 15 }, { 6: 1, 5: 1, 3: 13 });
+    const homeFrom = player === 'White' ? 18 : 5;
+    const outsideFrom = player === 'White' ? 17 : 6;
+    for (const mode of ['WAR', 'PEACE']) {
+      const result = analyze(state, player, [6, 4], mode);
+      assert.equal(allHome(state.board, player, state.bar), false);
+      assert.ok(result.legalMoves.some(move => move.from === homeFrom && move.die === 4));
+      assert.ok(result.legalMoves.some(move => move.from === outsideFrom && move.die === 6));
+      assert.ok(result.legalSequences.some(sequence =>
+        sequence.moves[0].from === homeFrom && sequence.moves[0].die === 4 &&
+        sequence.moves[1].from === outsideFrom && sequence.moves[1].die === 6 &&
+        sequence.totalBearOffs === 0));
+      assert.ok(result.legalSequences.some(sequence => sequence.totalBearOffs === 1));
+      assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2));
+    }
+  }
+});
+
+test('bringing the final checker home does not start mandatory bearing off midway through that turn', () => {
+  for (const player of ['White', 'Black']) {
+    const state = player === 'White'
+      ? position({ 17: 1, 18: 1, 20: 13 }, { 0: 15 })
+      : position({ 23: 15 }, { 6: 1, 5: 1, 3: 13 });
+    const outsideFrom = player === 'White' ? 17 : 6;
+    for (const mode of ['WAR', 'PEACE']) {
+      const first = analyze(state, player, [6, 4], mode).legalMoves.find(move => move.from === outsideFrom && move.die === 6);
+      assert.ok(first);
+      const next = applyMove(state.board, first, player, state.bar, state.off);
+      assert.equal(allHome(next.board, player, next.bar), true);
+      const remaining = analyze(next, player, [4], mode, 'NORMAL', false);
+      assert.ok(remaining.legalMoves.some(move => move.isBearOff));
+      assert.ok(remaining.legalMoves.some(move => !move.isBearOff));
+      const laterTurn = analyze(next, player, [4], mode, 'NORMAL', true);
+      assert.ok(laterTurn.legalMoves.every(move => move.isBearOff));
+    }
+  }
+});
+
+test('WAR maximizes captures before maximizing bear-offs when the turn began with all checkers home', () => {
+  const state = position({ 18: 1, 20: 1, 23: 13 }, { 0: 14, 19: 1 });
+  const war = analyze(state, 'White', [1, 4], 'WAR');
+  assert.ok(war.legalSequences.length > 0);
+  assert.ok(war.legalSequences.every(sequence => sequence.moves.length === 2 && sequence.totalHits === 1 && sequence.totalBearOffs === 1));
+  const peace = analyze(state, 'White', [1, 4], 'PEACE');
+  assert.ok(peace.legalSequences.every(sequence => sequence.totalHits === 0 && sequence.totalBearOffs === 2));
+});
+
+test('PEACE rejects a quiet first move that strands the second die when a complete turn requires a capture', () => {
+  const state = position({ 0: 1, 5: 1 }, { 1: 1, 2: 2, 7: 2, 8: 2 });
+  const rawQuiet = getRawMoves(state.board, 'White', [1, 2], state.bar, state.off)
+    .find(move => move.from === 5 && move.to === 6);
+  assert.ok(rawQuiet && !rawQuiet.isHit);
+  const quietNext = applyMove(state.board, rawQuiet, 'White', state.bar, state.off);
+  assert.equal(getRawMoves(quietNext.board, 'White', [2], quietNext.bar, quietNext.off).length, 0);
+  const result = analyze(state, 'White', [1, 2], 'PEACE');
+  assert.deepEqual(moveValues(result.legalMoves), ['0>1:1']);
+  assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2 && sequence.totalHits === 1));
+});
+
+test('PEACE must use all four playable double moves even when the last move forces a capture', () => {
+  const state = position({ 0: 1 }, { 4: 1 });
+  const result = analyze(state, 'White', [1, 1, 1, 1], 'PEACE');
+  assert.equal(result.legalSequences.length, 1);
+  const sequence = result.legalSequences[0];
+  assert.equal(sequence.moves.length, 4);
+  assert.equal(sequence.totalHits, 1);
+  assert.equal(sequence.moves[3].isHit, true);
+});
+
+test('older saved turns recover bearing-off eligibility from the turn history without imposing it mid-turn', () => {
+  const state = position({ 18: 1, 20: 13, 23: 1 }, { 0: 15 });
+  const saved = { ...state, currentPlayer: 'White', turnMoveCount: 1, moveLog: [
+    { player: 'White', move: { from: 17, to: 23, die: 6, isHit: false } },
+  ] };
+  assert.equal(savedTurnStartedAllHome(saved), false);
+  assert.equal(savedTurnStartedAllHome({ ...saved, bearOffPriorityAtTurnStart: false }), false);
+  assert.equal(savedTurnStartedAllHome({ ...saved, turnMoveCount: 0, moveLog: [] }), true);
+  assert.equal(savedTurnStartedAllHome({ ...saved, moveLog: [] }), false);
+  assert.equal(savedTurnStartedAllHome({ ...saved, moveLog: [
+    { player: 'White', move: { from: 18, to: 20, die: 2, isHit: false } },
+  ] }), true);
+  assert.equal(savedTurnStartedAllHome({ ...saved, moveLog: [
+    { player: 'White', move: { from: -1, to: 5, die: 6, isHit: false, isBarEntry: true } },
+  ] }), false);
 });
 
 test('doubles supply four moves, including repeated movement of one checker', () => {

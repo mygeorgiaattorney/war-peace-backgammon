@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "checkedAt": "2026-10-25T17:22:33.577Z",
+  "purpose": "Stability verification; not a comparison of strategy strength.",
+  "method": "Real Chromium diagnostic UI, fresh browser context for each strategy, Safe batch, Run 10.",
+  "sourceSha256": {
+    "src/App.tsx": "9ef7321ef48e3ca732bf04badf84a914876de0c48c0c9739e8c24ea9f1db1900",
+    "src/game/strategy.ts": "c29ad2b30324313abeee36346e2304edd6e4fb8116b5acbcfa9ce82e9997c31a"
+  },
+  "results": [
+    {
+      "strategy": "BALANCED",
+      "status": "passed",
+      "games": 10,
+      "elapsedSeconds": 29,
+      "rolls": 608,
+      "captures": 98,
+      "enemyControlTriggers": 14,
+      "enemyControlMoves": 16,
+      "blockedDoubles": 17,
+      "noEntryRolls": 50,
+      "steps": 1861,
+      "runtimeErrors": 0,
+      "whiteWins": 6,
+      "blackWins": 4,
+      "stopReason": "Completed requested 10 game(s)."
+    },
+    {
+      "strategy": "CONTROLLED_COMEBACK",
+      "status": "passed",
+      "games": 10,
+      "elapsedSeconds": 30,
+      "rolls": 592,
+      "captures": 88,
+      "enemyControlTriggers": 3,
+      "enemyControlMoves": 3,
+      "blockedDoubles": 15,
+      "noEntryRolls": 53,
+      "steps": 1821,
+      "runtimeErrors": 0,
+      "whiteWins": 8,
+      "blackWins": 2,
+      "stopReason": "Completed requested 10 game(s)."
+    }
+  ],
+  "subsequentVerification": {
+    "scope": "After these full-game runs, a human-only bearing-off die chooser was added. The rules engine and computer strategy were unchanged. The integrated application then passed the complete browser suite and production build.",
+    "browserScenariosPassed": 21,
+    "build": "TypeScript and Vite passed",
+    "finalSourceSha256": {
+      "src/App.tsx": "929d7eb96114b42d4bf6c35d69d164980a0b89a76fb2484e21e4a7b77a805063",
+      "src/game/strategy.ts": "c29ad2b30324313abeee36346e2304edd6e4fb8116b5acbcfa9ce82e9997c31a"
+    }
+  }
+}

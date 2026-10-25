@@ -139,7 +139,7 @@ function Overview() {
         <article className="wp-rule-card">
           <span className="wp-mode-label wp-mode-peace">PEACE</span>
           <h3>Keep the peace.</h3>
-          <p>Avoid captures when possible. If a hit is unavoidable, your opponent takes over your remaining moves.</p>
+          <p>Use every playable die, even if that forces a capture. Avoid hits among equally complete turns; a forced hit gives your opponent your remaining moves.</p>
         </article>
       </div>
       <div className="wp-rule-callout">
@@ -147,7 +147,7 @@ function Overview() {
         <p>Playable doubles switch WAR to PEACE, or PEACE to WAR. If there is no legal move, the mode stays the same and the turn passes.</p>
       </div>
       <h3>Your first game</h3>
-      <p>Choose an opponent, roll the opening dice, then follow the turn prompt. Select one of your checkers and a highlighted destination. You can also drag a checker to a legal destination.</p>
+      <p>Choose an opponent, roll the opening dice, then follow the turn prompt. Gold dashed frames mark checkers you can move. Select one to see cyan destination frames, or coral frames for captures. You can also drag. Violet frames trace the last move.</p>
     </>
   );
 }
@@ -161,7 +161,7 @@ function CoreRules() {
       </li>
       <li>
         <h3>Use your dice</h3>
-        <p>Use as many dice as legally possible. If only one of two different dice can be used and either is playable, use the higher die. Doubles provide four moves of the same value.</p>
+        <p>Use the maximum number of dice that the position allows, in either order. There is no higher-die preference. You cannot choose a shorter turn to avoid a PEACE capture. Doubles provide four moves of the same value, and you must use all four when possible.</p>
       </li>
       <li>
         <h3>Blocked points and prisoners</h3>
@@ -169,7 +169,7 @@ function CoreRules() {
       </li>
       <li>
         <h3>WAR and PEACE priorities</h3>
-        <p>After the dice-use rules, WAR requires the most captures; PEACE requires the fewest. A no-hit play must be used if one is available. Among plays satisfying that priority, bear off as many checkers as possible.</p>
+        <p>First use as many dice as possible. Among those complete turns, WAR requires the most captures and PEACE requires the fewest. If all your checkers were already home when this turn began, next maximize the number borne off. In WAR, capturing takes priority over bearing off.</p>
       </li>
       <li>
         <h3>Enemy Control</h3>
@@ -181,7 +181,7 @@ function CoreRules() {
       </li>
       <li>
         <h3>Bearing off and winning</h3>
-        <p>Bring all your remaining checkers into your home board before bearing off. Use an exact die, or a larger die only when no checker sits farther from the exit. The first player to bear off all 15 wins.</p>
+        <p>All remaining checkers must be home and your bar empty before any checker can bear off. If the last outside checker arrives during a turn, you may then bear off, but maximizing bear-offs is not compulsory until your next turn. Use an exact die, or an oversized die only when no checker is farther from the exit. The first player to bear off all 15 wins.</p>
       </li>
     </ol>
   );
@@ -194,7 +194,7 @@ function Strategy() {
         <span className="wp-strategy-number" aria-hidden="true">01</span>
         <div>
           <h3>Set a PEACE land mine</h3>
-          <p>A deliberately exposed checker can become a trap if your opponent’s roll forces a capture. You then choose their remaining moves. Exposure alone is not enough: a legal no-hit play lets them avoid the trap.</p>
+          <p>A deliberately exposed checker can become a trap if using all playable dice forces your opponent to capture it. You then choose their remaining moves. An equally complete no-hit turn avoids the trap; stopping early does not.</p>
         </div>
       </article>
       <article>
@@ -214,8 +214,8 @@ function Strategy() {
       <article>
         <span className="wp-strategy-number" aria-hidden="true">04</span>
         <div>
-          <h3>Look beyond the pip count</h3>
-          <p>A racing lead matters, but so do blocked points, prisoners, and the current mode. A PEACE violation can open a comeback; it does not guarantee one.</p>
+          <h3>Choose a comeback risk</h3>
+          <p>Both computers consider cautious land mines from 50 pips behind and stronger traps beyond 75. Open entry points and lone opposing home checkers can make a return from the bar useful; a heavily blocked home board makes sacrifice dangerous. The Aggressive computer accepts more exposure. These are calculated chances, not guaranteed comebacks.</p>
         </div>
       </article>
     </div>
