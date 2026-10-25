@@ -1,14 +1,14 @@
 {
   "name": "warpeacebackgammon",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node tests/engine-regression.mjs",
+    "test": "node tests/engine-regression.mjs && node tests/strategy-regression.mjs",
     "test:browser": "node tests/browser-regression.cjs"
   },
   "dependencies": {

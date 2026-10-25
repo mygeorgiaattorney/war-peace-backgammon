@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Development version: **0.1.0**. See the project-status page for verification results and publication status.
+Current version: **0.2.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -18,32 +18,46 @@ Open the game in your browser; no software installation is required to play. Use
 
 Roll the opening dice and follow the turn prompt. Select a checker and a highlighted destination, or drag the checker to a legal destination. Prisoners on the bar must re-enter before other checkers can move. Select a legal home-board checker and its bearing-off tray to bear off. Use **End Turn** after all required moves are complete; a completely blocked turn passes automatically.
 
+If either die can legally bear off the selected checker, choose the die in the controls—for example **Use 4** or **Use 6**. Tapping, dragging, and tapping the selected source again all honor that choice.
+
 **How to play** opens the Overview, Core Rules, and Strategy tabs. A saved game can be continued from the opening menu. The interface supports touch, pointer input, and keyboard navigation; the board targets 4:3 tablet proportions.
+
+Full frames identify the moves: gold dashes mark playable sources, an ivory frame marks the selected source, cyan marks destinations, coral marks captures, and violet traces the last move. A bar entry and bearing-off destination use matching frames. The board checkers are approximately 5% smaller than in 0.1.0.
+
+**Narration** turns the illustrated gameplay notices on or off. **Sound** separately controls the audio, including a forceful WAR capture cue and a somber descending PEACE capture cue. Both preferences stay in this browser.
 
 ## The rules that distinguish this game
 
 1. **Opening:** Each player rolls one die; ties are rerolled. The higher roller chooses WAR or PEACE and moves first using those two opening dice.
-2. **Dice use comes first:** Use as many dice as legally possible. If only one of two different dice can be used and both are individually playable, use the higher die. Doubles provide four moves.
+2. **Dice use comes first:** Use the maximum number of moves possible, even when completing the turn requires a PEACE capture. Either die may be played first when that order satisfies the rules. There is no separate higher-die preference, including when only one die can be used. Doubles provide four moves, all of which must be used when possible.
 3. **WAR:** Among the sequences satisfying the dice-use rules, choose a sequence with the greatest number of captures.
-4. **PEACE:** Among those sequences, choose the fewest captures. Use a no-hit sequence when one is available. This is a whole-turn priority, not simply a preference for an individual non-hitting first move.
-5. **Bearing-off priority:** After the WAR/PEACE capture priority, bear off as many checkers as possible. Ordinary home-board and oversized-die restrictions still apply.
-6. **Enemy Control:** A capture during normal PEACE play gives the opponent control of the moving player's checkers for the remainder of that turn. The opponent uses the unused dice; there is no extra roll. WAR/PEACE priorities are suspended during Enemy Control, while ordinary movement and dice-use rules remain in force.
+4. **PEACE:** Among the turns using the maximum number of moves, choose the fewest captures. A quiet move that strands a playable die is not permitted when a complete turn exists. A forced capture remains compulsory and triggers Enemy Control.
+5. **Bearing-off priority:** If every remaining checker was already home and the bar empty when this turn began, maximize bearing off after satisfying the WAR/PEACE capture priority. In WAR, captures take priority over extra bear-offs. If the last outside checker comes home during the turn, bearing off becomes possible but maximizing bear-offs is optional until the next turn. Ordinary exact-die and oversized-die restrictions still apply.
+6. **Enemy Control:** A capture during normal PEACE play gives the opponent control of the moving player's checkers for the remainder of that turn. The opponent uses the unused dice; there is no extra roll. WAR/PEACE and bearing-off priorities are suspended during Enemy Control, while ordinary movement and maximum move use remain in force.
 7. **Doubles:** Playable doubles switch WAR to PEACE or PEACE to WAR before the moves. Completely blocked doubles preserve the current mode and the turn passes.
 8. **Winning:** Bear off all 15 checkers, or win by the opponent's resignation.
 
 Captured checkers are called **Prisoners of War** or **Prisoners of Peace**. A deliberately exposed checker can act as a PEACE “land mine” if it forces a capture and leaves useful dice for Enemy Control. The tactic creates an opportunity, not a guaranteed comeback.
 
-The implemented rules live in [src/App.tsx](src/App.tsx). Player-facing explanations live in [RulesDialog.tsx](src/components/RulesDialog.tsx).
+Both computer opponents consider **cautious landmine play from 50 through 75 pips behind**, and **stronger landmine play when more than 75 pips behind**. They consider the opponent's made home points, open entries, and exposed home checkers before accepting a capture risk. The Aggressive opponent accepts more exposure; a closed opposing home board discourages sacrifice. Landmine play is disabled when the checkers have passed one another and contact is no longer possible.
+
+The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluation lives in [src/game/strategy.ts](src/game/strategy.ts). Player-facing explanations live in [RulesDialog.tsx](src/components/RulesDialog.tsx).
 
 ## Saved progress
 
-Game progress, player records, sound preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, and player names. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
 
-## Version 0.1.0
+## Version 0.2.0 — October 25 playtest update
+
+This update implements Richard's October 25 playtest corrections: freely ordered dice without a higher-die tie-break; bearing-off priority tied to the start of the turn; complete PEACE turns even when capture is unavoidable; risk-adjusted computer landmines; optional illustrated narration and differentiated capture sounds; smaller checkers and full move frames.
+
+This update passed **25 engine regressions**, **11 computer-strategy regressions**, **21 browser scenarios**, and **20 complete simulated games**. The [status page](docs/PROJECT_STATUS.md) records layout, build, and publication checks. The older results below are historical evidence for 0.1.0. Simulated games establish stability, not proven strategy strength.
+
+## Version 0.1.0 — released history
 
 This update incorporates the later introduction, tabbed rules, and Prisoner of War/Peace terminology; refines the board layout; and corrects Enemy Control computer decisions, tap/drag interactions, undo restrictions, resignation ownership, interrupted dice rolls, and saved-game restoration.
 
-The update has passed **19 engine regressions**, **15 Chromium browser scenarios**, TypeScript validation, and the production build. Actual iPad Safari interaction and audible output still require device verification. The [status page](docs/PROJECT_STATUS.md) records the remaining release checks.
+The 0.1.0 release passed **19 engine regressions**, **15 Chromium browser scenarios**, **20 complete simulated games**, TypeScript validation, and the production build. Richard's subsequent playtest supplied the rule and presentation corrections incorporated into 0.2.0. Actual-device verification of the revised release and audible output remains necessary.
 
 ## Development
 
@@ -79,7 +93,7 @@ Start `npm run dev` in one terminal. In a second terminal, run:
 npm run test:browser
 ```
 
-These scenarios exercise real browser interaction, game-state transitions, and responsive interface behavior. Engine regressions run separately with `npm test`.
+These scenarios exercise real browser interaction and game-state transitions. The rule-engine and computer-strategy regressions run with `npm test`; responsive layouts are also inspected in tablet and phone viewports.
 
 ## Diagnostic mode
 
@@ -96,10 +110,13 @@ The panel supports automated games, different computer strategies and speeds, an
 | Location | Purpose |
 | --- | --- |
 | `src/App.tsx` | Rules engine, turn state, computer play, board, and diagnostics. |
+| `src/game/strategy.ts` | Computer evaluation, legal-turn selection, and landmine risk. |
 | `src/components/GameIntro.tsx` | Opening explanation and game selection. |
 | `src/components/RulesDialog.tsx` | In-game rules and strategy tabs. |
-| `src/index.css`, `src/components/game-info.css` | Responsive layout and interface styling. |
+| `src/components/GameNarration.tsx` | Optional illustrated gameplay notices. |
+| `src/game.css`, `src/index.css`, `src/components/game-info.css`, `src/components/game-narration.css` | Board, responsive layout, and interface styling. |
 | `tests/engine-regression.mjs` | Rules regression tests. |
+| `tests/strategy-regression.mjs` | Landmine thresholds, home-board risk, and legal computer decisions. |
 | `tests/browser-regression.cjs` | Chromium interaction and game-state regression scenarios. |
 | `docs/PROJECT_STATUS.md` | Decisions, verification status, and next steps. |
 | `.github/workflows/deploy.yml` | GitHub Pages build and deployment. |

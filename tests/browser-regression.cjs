@@ -285,6 +285,152 @@ register('public game hides diagnostics and the testing URL exposes them', async
   assert.equal(await button(page, 'Run 10').isVisible(), true);
 });
 
+register('six-four permits moving a home four before bringing the last outside checker home', async page => {
+  await loadFixture(page, makeSave({ white: { 17: 1, 18: 1, 20: 13 }, black: { 0: 15 }, remainingDice: [6, 4], mode: 'PEACE' }));
+  await point(page, 18).click();
+  assert.equal(await point(page, 22).getAttribute('data-legal-destination'), 'true');
+  await point(page, 22).click();
+  const first = await waitSaved(page, s => s.turnMoveCount === 1);
+  assert.equal(first.moveLog[0].move.die, 4);
+  assert.equal(first.bearOffPriorityAtTurnStart, false);
+  assert.equal(await button(page, 'End turn').isDisabled(), true);
+  await point(page, 17).click();
+  await point(page, 23).click();
+  const finished = await waitSaved(page, s => s.remainingDice.length === 0);
+  assert.equal(finished.off.White, 0);
+  assert.equal(finished.board[22].count, 1);
+  assert.equal(finished.board[23].count, 1);
+  assert.equal(await button(page, 'End turn').isEnabled(), true);
+});
+
+register('entering home with six does not force a bear-off after reload, undo, or legacy save migration', async page => {
+  const fixture = makeSave({ white: { 17: 1, 18: 1, 20: 13 }, black: { 0: 15 }, remainingDice: [6, 4] });
+  await loadFixture(page, fixture);
+  await point(page, 17).click();
+  await point(page, 23).click();
+  const entered = await waitSaved(page, s => s.turnMoveCount === 1 && s.board[17].count === 0);
+  assert.equal(entered.bearOffPriorityAtTurnStart, false);
+  assert.equal(entered.version, 3);
+  await button(page, 'Menu').click();
+  await button(page, 'Continue saved game').click();
+  await point(page, 18).click();
+  assert.equal(await point(page, 22).getAttribute('data-legal-destination'), 'true');
+  await point(page, 22).click();
+  await waitSaved(page, s => s.remainingDice.length === 0 && s.off.White === 0);
+  await button(page, 'Undo move').click();
+  const undone = await waitSaved(page, s => s.remainingDice.length === 1);
+  assert.equal(undone.bearOffPriorityAtTurnStart, false);
+  await point(page, 18).click();
+  assert.equal(await point(page, 22).getAttribute('data-legal-destination'), 'true');
+
+  const legacy = { ...entered, version: 2 };
+  delete legacy.bearOffPriorityAtTurnStart;
+  await loadFixture(page, legacy);
+  assert.equal((await saved(page)).bearOffPriorityAtTurnStart, false);
+  await point(page, 18).click();
+  assert.equal(await point(page, 22).getAttribute('data-legal-destination'), 'true');
+});
+
+register('PEACE cannot choose a quiet partial turn or end before a remaining playable die', async page => {
+  await loadFixture(page, makeSave({ white: { 0: 1, 5: 1 }, black: { 1: 1, 2: 2, 7: 2, 8: 2 }, remainingDice: [1, 2], mode: 'PEACE' }));
+  assert.equal(await point(page, 5).getAttribute('data-legal-origin'), 'false', 'The quiet move would strand the second die.');
+  await point(page, 0).click();
+  assert.equal(await point(page, 1).getAttribute('data-legal-destination'), 'true');
+  await point(page, 1).click();
+  const controlled = await waitSaved(page, s => s.controlState === 'ENEMY_CONTROL');
+  assert.equal(controlled.controller, 'Black');
+  assert.deepEqual(controlled.remainingDice, [2]);
+  assert.equal(await button(page, 'End turn').isDisabled(), true);
+  await point(page, 1).click();
+  await point(page, 3).click();
+  await waitSaved(page, s => s.remainingDice.length === 0);
+  assert.equal(await button(page, 'End turn').isEnabled(), true);
+});
+
+register('ambiguous bearing-off lets the human choose either die for tray taps, drags, and repeated source taps', async page => {
+  const fixture = () => makeSave({ white: { 23: 2 }, black: { 0: 15 }, remainingDice: [4, 6] });
+  for (const input of ['tray', 'drag', 'source']) {
+    if (input === 'source') await page.setViewportSize({ width: 390, height: 844 });
+    await loadFixture(page, fixture());
+    if (input === 'drag') {
+      const from = await point(page, 23).boundingBox();
+      const to = await page.locator('[data-bear-off-player="White"]').boundingBox();
+      assert.ok(from && to);
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
+      await page.mouse.up();
+    } else {
+      await point(page, 23).click();
+      if (input === 'tray') await page.locator('[data-bear-off-player="White"]').click();
+      else await point(page, 23).click();
+    }
+    assert.equal(await button(page, 'Use 4').isVisible(), true, input);
+    assert.equal(await button(page, 'Use 6').isVisible(), true, input);
+    assert.equal((await saved(page)).off.White, 13, 'Requesting a choice must not consume a die.');
+    if (input === 'tray') {
+      await button(page, 'Cancel die choice').click();
+      assert.equal(await page.getByTestId('bear-off-choice').count(), 0);
+      assert.equal((await saved(page)).off.White, 13);
+      await page.locator('[data-bear-off-player="White"]').click();
+      assert.equal(await button(page, 'Use 4').isVisible(), true);
+    }
+    const chosen = input === 'drag' ? 6 : 4;
+    await button(page, `Use ${chosen}`).click();
+    const next = await waitSaved(page, s => s.off.White === 14);
+    assert.deepEqual(next.remainingDice, [chosen === 4 ? 6 : 4]);
+    assert.equal(next.moveLog[0].move.die, chosen);
+    await button(page, 'Undo move').click();
+    await waitSaved(page, s => s.off.White === 13);
+    assert.equal(await button(page, 'Use 4').count(), 0);
+  }
+});
+
+register('full-point frames distinguish legal sources, selected destination, and completed move', async page => {
+  await loadFixture(page, moveFixture());
+  assert.equal(await point(page, 0).getAttribute('data-legal-origin'), 'true');
+  assert.equal(await page.locator('.origin-mark,.destination-mark').count(), 0);
+  assert.equal(await point(page, 2).getAttribute('data-legal-destination'), 'false', 'Destinations wait for a selected source.');
+  const originFrame = await point(page, 0).locator('.point-move-frame').evaluate(el => ({ color: getComputedStyle(el).borderColor, width: getComputedStyle(el).borderTopWidth }));
+  assert.ok(parseFloat(originFrame.width) >= 2, 'The origin frame is visible at tablet size.');
+  await point(page, 0).click();
+  const destinationFrame = await point(page, 2).locator('.point-move-frame').evaluate(el => ({ color: getComputedStyle(el).borderColor, width: getComputedStyle(el).borderTopWidth }));
+  assert.notEqual(destinationFrame.color, originFrame.color);
+  assert.ok(parseFloat(destinationFrame.width) >= 2);
+  await point(page, 2).click();
+  await waitSaved(page, s => s.board[2].count === 1);
+  assert.equal(await point(page, 0).getAttribute('data-last-origin'), 'true');
+  assert.equal(await point(page, 2).getAttribute('data-last-destination'), 'true');
+  assert.equal(await page.locator('.last-move-frame').count(), 2);
+});
+
+register('optional narration distinguishes WAR and PEACE captures and persists its off setting', async page => {
+  const capture = mode => makeSave({ white: { 0: 1, 18: 14 }, black: { 1: 1, 5: 14 }, remainingDice: [1], mode });
+  await loadFixture(page, capture('WAR'));
+  assert.equal(await button(page, 'Narration on').isVisible(), true);
+  await point(page, 0).click();
+  await point(page, 1).click();
+  await page.getByTestId('game-narration').waitFor({ state: 'visible' });
+  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of War/);
+  await button(page, 'Dismiss game narration').click();
+  assert.equal(await page.getByTestId('game-narration').count(), 0);
+  await button(page, 'Narration on').click();
+  await page.waitForFunction(() => localStorage.getItem('warPeaceBackgammonNarrationEnabledV1') === 'off');
+  await loadFixture(page, capture('WAR'));
+  assert.equal(await button(page, 'Narration off').isVisible(), true);
+  await point(page, 0).click();
+  await point(page, 1).click();
+  await waitSaved(page, s => s.bar.Black === 1);
+  assert.equal(await page.getByTestId('game-narration').count(), 0);
+  await button(page, 'Narration off').click();
+  await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
+  await point(page, 0).click();
+  await page.getByTestId('game-narration').waitFor({ state: 'visible' });
+  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /Black takes Enemy Control/);
+  assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.');
+});
+
 register('malformed saved player names and opening dice are rejected without breaking the menu', async page => {
   for (const malformed of [
     moveFixture({ whitePlayerName: 42 }),

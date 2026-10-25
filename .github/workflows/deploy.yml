@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify game rules
+      - name: Verify rules and computer strategy
         run: npm test
 
       - name: Build site
