@@ -2,8 +2,7 @@
 
 - **Last reviewed:** October 25, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.1.0 — deployed October 25, 2026
-- **Working version:** 0.2.0 — October 25 playtest corrections; local release verification complete, publication pending
+- **Released version:** 0.2.0 — deployed October 25, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
 
@@ -37,7 +36,7 @@ The later file `App_warpeace_intro_polish_replacement.tsx`, supplied July 25, 20
 
 The July replacement's prose oversimplified PEACE as always requiring an individual non-hitting move when available and described the opening sequence out of order. Preserve the actual rules above and the corrected tabbed explanation, rather than copying that wording verbatim.
 
-## Version 0.2.0 — current work
+## Version 0.2.0 — released update
 
 Richard reported a 6–4 turn where the last outside checker was being forced home ahead of a possible home-board move. The old filter maximized bearing off across every turn, including turns that began outside home, and separately favored the larger die when only one die could be used. Both restrictions have now been corrected to the custom rules above.
 
@@ -59,7 +58,7 @@ Richard reported a 6–4 turn where the last outside checker was being forced ho
 | Browser interactions | **21 passed.** Includes the 6–4 example, mid-turn save/reload/undo and older-save migration, compulsory PEACE continuation, explicit bearing-off die choice by tap/drag/repeated source tap and cancellation, full-point frames, optional capture narration, and native audio activation/persistence. The die-choice case also runs at phone size. No runtime or console errors. |
 | Browser layouts | **Passed at 1024 × 768, 390 × 844, and 844 × 390:** 4:3 board, no page overflow in the tested active positions, approximately 5% smaller rendered checkers, and distinct full-point frames. The optional tactics note scrolls within the controls. Opening/name-entry screens and actual PEACE narration cards were also checked; card text and dismissal fit tablet and phone. |
 | Complete-game simulation | **20/20 completed:** 10 Balanced and 10 Aggressive, in fresh browser contexts. 1,200 rolls, 186 captures, 17 Enemy Control triggers, and 32 blocked doubles; no observed lockups or runtime/diagnostic errors. [Recorded results](verification/feedback-0.2.0-games.json). These are stability checks, not a strategy-strength comparison. |
-| GitHub update and Pages deployment | Pending for 0.2.0. Record the release commit and successful deployment after integration checks. |
+| GitHub update and Pages deployment | **Released.** [PR #2](https://github.com/mygeorgiaattorney/war-peace-backgammon/pull/2) passed [GitHub checks](https://github.com/mygeorgiaattorney/war-peace-backgammon/actions/runs/40216539631) and merged as [`6e3bc2b`](https://github.com/mygeorgiaattorney/war-peace-backgammon/commit/6e3bc2bb9cc383aa22e1c3ac1b676de73464b517). [Pages deployment](https://github.com/mygeorgiaattorney/war-peace-backgammon/actions/runs/40216591920) succeeded. The live page, JavaScript, and stylesheet returned HTTP 200; the served assets contain the explicit die chooser, landmine strategy, optional narration, and full-point frames. |
 | Actual iPad Safari and audio | Revised touch comfort, frame visibility, narration, and audible capture effects still require an actual-device check. |
 
 ### Saved-game compatibility
