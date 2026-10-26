@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.3.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.3.1**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -46,6 +46,10 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 ## Saved progress
 
 Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.3.1 — larger iPad board
+
+Landscape tablets now put the turn information and controls in a narrow strip beside the board. Player names share the header. The board and essential controls fit the screen; the optional move guide and footer can scroll below play. Keyboard entry and pinch-zoom no longer reduce the table width. Portrait tablets retain controls below the board.
 
 ## Version 0.3.0 — October 26 iPad presentation
 

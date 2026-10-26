@@ -542,7 +542,7 @@ register('illustrated rules show the capture before the victim commands the rema
 
 register('tablet rotation keeps the board and controls visible without overlapping checkers', async page => {
   await loadFixture(page, moveFixture());
-  for(const viewport of [{width:1024,height:768},{width:1024,height:650},{width:768,height:1024},{width:1366,height:900},{width:390,height:844}]){
+  for(const viewport of [{width:1024,height:768},{width:1024,height:650},{width:912,height:590},{width:768,height:1024},{width:1366,height:900},{width:390,height:844}]){
     await page.setViewportSize(viewport); await page.waitForTimeout(180);
     const layout=await page.evaluate(()=>{
       const board=document.querySelector('[data-testid=board]').getBoundingClientRect();
@@ -552,13 +552,48 @@ register('tablet rotation keeps the board and controls visible without overlappi
         const pieces=[...stack.children].map(n=>n.getBoundingClientRect()).sort((a,b)=>a.top-b.top);
         for(let i=1;i<pieces.length;i++)if(pieces[i].top<pieces[i-1].bottom+1)overlap=true;
       });
-      return {ratio:board.width/board.height,controlsBottom:controls.bottom,overlap,overflow:document.documentElement.scrollWidth>innerWidth};
+      return {ratio:board.width/board.height,boardWidth:board.width,appWidth:document.querySelector('main').getBoundingClientRect().width,controlsBottom:controls.bottom,overlap,overflow:document.documentElement.scrollWidth>innerWidth};
     });
     assert.ok(Math.abs(layout.ratio-4/3)<.01);
     assert.equal(layout.overlap,false);
     assert.equal(layout.overflow,false);
     if(viewport.width>=768)assert.ok(layout.controlsBottom<=viewport.height,JSON.stringify({viewport,layout}));
+    if(viewport.width>=800&&viewport.width/viewport.height>=1.2){
+      assert.ok(layout.appWidth>=viewport.width*.85,JSON.stringify({viewport,layout}));
+      assert.ok(layout.boardWidth>=viewport.width*.68,JSON.stringify({viewport,layout}));
+    }
   }
+});
+
+register('name entry and pinch zoom do not shrink the landscape table',async page=>{
+  await page.setViewportSize({width:912,height:590});
+  await chooseTwoPlayers(page);
+  await page.waitForTimeout(180);
+  const board=page.getByTestId('board');
+  const before=await board.evaluate(n=>n.getBoundingClientRect().width);
+  assert.ok(before>=620,'The opening board should use the landscape space.');
+  await page.getByLabel('White player name').focus();
+  await page.evaluate(()=>{
+    Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>260});
+    visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await page.waitForTimeout(120);
+  assert.ok(Math.abs((await board.evaluate(n=>n.getBoundingClientRect().width))-before)<1,'Typing must not shrink the board.');
+  await page.evaluate(()=>document.activeElement.blur());
+  await page.waitForTimeout(150);
+  const beforeZoom=await board.evaluate(n=>n.getBoundingClientRect().width);
+  await page.evaluate(()=>{
+    Object.defineProperty(visualViewport,'scale',{configurable:true,get:()=>2});
+    visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await page.waitForTimeout(120);
+  assert.ok(Math.abs((await board.evaluate(n=>n.getBoundingClientRect().width))-beforeZoom)<1,'Pinch zoom must not shrink the layout.');
+  await page.evaluate(()=>{
+    delete visualViewport.height;delete visualViewport.scale;
+    visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await page.waitForTimeout(120);
+  assert.ok((await board.evaluate(n=>n.getBoundingClientRect().width))>=620);
 });
 
 register('music is opt-in, survives closing settings, and follows WAR PEACE and VENGEANCE', async page => {
