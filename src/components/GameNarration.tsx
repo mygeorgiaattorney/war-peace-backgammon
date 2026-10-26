@@ -2,7 +2,7 @@ import "./game-narration.css";
 
 export type NarrationEvent = {
   id: number;
-  kind: "war-capture" | "peace-capture" | "bear-off" | "landmine";
+  kind: "vengeance" | "war-capture" | "peace-capture" | "bear-off" | "landmine";
   title: string;
   detail: string;
   player: "White" | "Black";
@@ -12,6 +12,7 @@ type Props = { event: NarrationEvent; onDismiss: () => void };
 
 export default function GameNarration({ event, onDismiss }: Props) {
   const peace = event.kind === "peace-capture";
+  const vengeance = event.kind === "vengeance";
   return (
     <section className={`game-narration narration-${event.kind}`} aria-label="Game narration" data-testid="game-narration">
       <div className="narration-emblem" aria-hidden="true">
@@ -30,7 +31,7 @@ export default function GameNarration({ event, onDismiss }: Props) {
         <span className={`narration-checker ${event.player === "White" ? "checker-light" : "checker-dark"}`} />
       </div>
       <div className="narration-copy" role="status" aria-live="polite" aria-atomic="true">
-        <span className="narration-eyebrow">{peace ? "THE COST OF PEACE" : event.kind === "landmine" ? "A COMEBACK CHANCE" : event.kind === "bear-off" ? "HOMEWARD" : "ON THE BATTLEFIELD"}</span>
+        <span className="narration-eyebrow">{vengeance ? "THE VICTIM TAKES COMMAND" : peace ? "THE COST OF PEACE" : event.kind === "landmine" ? "A COMEBACK CHANCE" : event.kind === "bear-off" ? "HOMEWARD" : "ON THE BATTLEFIELD"}</span>
         <strong>{event.title}</strong>
         <p>{event.detail}</p>
       </div>

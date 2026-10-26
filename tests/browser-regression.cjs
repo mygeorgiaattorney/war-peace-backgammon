@@ -2,13 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-let chromium;
+let chromium, webkit;
 try {
-  ({ chromium } = require('playwright'));
+  ({ chromium, webkit } = require('playwright'));
 } catch {
   const runtimeModules = process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;
   if (!runtimeModules) throw new Error('Install Playwright, or set CODEX_PRIMARY_RUNTIME_NODE_MODULES.');
-  ({ chromium } = require(path.join(runtimeModules, 'playwright')));
+  ({ chromium, webkit } = require(path.join(runtimeModules, 'playwright')));
 }
 
 const BASE_URL = process.env.BACKGAMMON_TEST_URL || 'http://127.0.0.1:5173/war-peace-backgammon/';
@@ -61,6 +61,12 @@ function completedTurnFixture(overrides = {}) {
 
 const point = (page, index) => page.locator(`[data-point-index="${index}"]`);
 const button = (page, name) => page.getByRole('button', { name, exact: true });
+
+async function soundSettings(page, action) {
+  await button(page, 'Sound').click();
+  await action();
+  await button(page, 'Close sound settings').click();
+}
 
 async function saved(page) {
   return page.evaluate(key => JSON.parse(window.localStorage.getItem(key) || 'null'), SAVE_KEY);
@@ -407,28 +413,28 @@ register('full-point frames distinguish legal sources, selected destination, and
 register('optional narration distinguishes WAR and PEACE captures and persists its off setting', async page => {
   const capture = mode => makeSave({ white: { 0: 1, 18: 14 }, black: { 1: 1, 5: 14 }, remainingDice: [1], mode });
   await loadFixture(page, capture('WAR'));
-  assert.equal(await button(page, 'Narration on').isVisible(), true);
+  await soundSettings(page, async () => assert.equal(await button(page, 'Narration on').isVisible(), true));
   await point(page, 0).click();
   await point(page, 1).click();
   await page.getByTestId('game-narration').waitFor({ state: 'visible' });
   assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of War/);
   await button(page, 'Dismiss game narration').click();
   assert.equal(await page.getByTestId('game-narration').count(), 0);
-  await button(page, 'Narration on').click();
+  await soundSettings(page, async () => { await button(page, 'Narration on').click(); });
   await page.waitForFunction(() => localStorage.getItem('warPeaceBackgammonNarrationEnabledV1') === 'off');
   await loadFixture(page, capture('WAR'));
-  assert.equal(await button(page, 'Narration off').isVisible(), true);
+  await soundSettings(page, async () => assert.equal(await button(page, 'Narration off').isVisible(), true));
   await point(page, 0).click();
   await point(page, 1).click();
   await waitSaved(page, s => s.bar.Black === 1);
   assert.equal(await page.getByTestId('game-narration').count(), 0);
-  await button(page, 'Narration off').click();
+  await soundSettings(page, async () => { await button(page, 'Narration off').click(); });
   await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
   await point(page, 0).click();
   await page.getByTestId('game-narration').waitFor({ state: 'visible' });
   assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
   assert.match(await page.getByTestId('game-narration').innerText(), /Black takes Enemy Control/);
-  assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.');
+  await soundSettings(page, async () => assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.'));
 });
 
 register('malformed saved player names and opening dice are rejected without breaking the menu', async page => {
@@ -471,29 +477,121 @@ register('returning-player sound unlocks a native AudioContext and off/on choice
   assert.equal(await page.evaluate(() => window.__backgammonAudioContexts.length), 0, 'Reload starts without an old audio context.');
   await chooseTwoPlayers(page);
   await page.waitForFunction(() => window.__backgammonAudioContexts.some(context => context.state === 'running'));
-  assert.equal(await button(page, 'Sound on').isVisible(), true);
+  await soundSettings(page, async () => assert.equal(await button(page, 'Sound on').isVisible(), true));
 
-  await button(page, 'Sound on').click();
+  await soundSettings(page, async () => { await button(page, 'Sound on').click(); });
   await page.waitForFunction(() => localStorage.getItem('warPeaceBackgammonSoundEnabledV1') === 'off');
   await page.reload({ waitUntil: 'networkidle' });
   await chooseTwoPlayers(page);
-  assert.equal(await button(page, 'Sound off').isVisible(), true);
+  await soundSettings(page, async () => assert.equal(await button(page, 'Sound off').isVisible(), true));
   assert.equal(await page.evaluate(() => window.__backgammonAudioContexts.length), 0, 'Sound-off play must not initialize audio.');
 
-  await button(page, 'Sound off').click();
+  await soundSettings(page, async () => { await button(page, 'Sound off').click(); });
   await page.waitForFunction(() => window.__backgammonAudioContexts.some(context => context.state === 'running'));
   await page.waitForFunction(() => localStorage.getItem('warPeaceBackgammonSoundEnabledV1') === 'on');
   await page.reload({ waitUntil: 'networkidle' });
   await chooseTwoPlayers(page);
-  assert.equal(await button(page, 'Sound on').isVisible(), true);
+  await soundSettings(page, async () => assert.equal(await button(page, 'Sound on').isVisible(), true));
   await page.waitForFunction(() => window.__backgammonAudioContexts.some(context => context.state === 'running'));
 });
 
+register('VENGEANCE changes the whole table and leaves ownership with the moving side', async page => {
+  await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
+  await point(page, 0).click();
+  await waitSaved(page, s => s.controlState === 'ENEMY_CONTROL' && s.remainingDice[0] === 2);
+  assert.equal(await page.locator('.theme-vengeance').count(), 1);
+  assert.match(await page.getByTestId('mode').innerText(), /VENGEANCE/);
+  assert.match(await page.getByTestId('turn').innerText(), /Black commands.*White’s checkers/s);
+  assert.equal(await point(page, 0).locator('.checker-light').count(), 1);
+  assert.match(await page.getByTestId('game-narration').innerText(), /THE VICTIM TAKES COMMAND/);
+  await button(page, 'Dismiss game narration').click();
+  await point(page, 4).click();
+  await point(page, 6).click();
+  const result = await waitSaved(page, s => s.remainingDice.length === 0);
+  assert.equal(result.board[6].owner, 'White');
+  assert.equal(result.controller, 'Black');
+  assert.equal(await page.locator('.theme-vengeance').count(), 0, 'No useful borrowed moves remain.');
+});
+
+register('a last-die PEACE capture creates a prisoner without a false VENGEANCE handoff', async page => {
+  await loadFixture(page, makeSave({ white: { 2: 1, 4: 2, 18: 4, 20: 4, 22: 4 }, black: { 3: 1, 5: 14 }, currentPlayer:'Black',controller:'Black',remainingDice: [1], mode: 'PEACE' }));
+  await point(page, 3).click(); await point(page, 2).click();
+  await waitSaved(page, s => s.bar.White === 1 && s.remainingDice.length === 0);
+  assert.equal(await page.locator('.theme-vengeance').count(), 0);
+  assert.match(await page.getByTestId('mode').innerText(), /PEACE/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /No playable moves remain/);
+});
+
+register('illustrated rules show the capture before the victim commands the remaining moves', async page => {
+  await chooseTwoPlayers(page);
+  await button(page, 'How to play').click();
+  await page.getByRole('tab', {name:'Watch the rules'}).click();
+  const examples=page.locator('.rule-examples');
+  await examples.getByRole('button',{name:'VENGEANCE',exact:true}).click();
+  assert.match(await examples.innerText(), /Black cannot avoid this capture/);
+  await examples.getByRole('button',{name:'Play the forced capture',exact:true}).click();
+  assert.match(await examples.innerText(), /White takes control/);
+  assert.match(await examples.locator('.example-caption').innerText(), /White commands Black/);
+  await examples.getByRole('button',{name:'When the capture uses the last die',exact:true}).click();
+  await examples.getByRole('button',{name:'Use the quiet 2',exact:true}).click();
+  await examples.getByRole('button',{name:'Capture with the last 1',exact:true}).click();
+  assert.match(await examples.innerText(), /no borrowed|no dice|no remaining|no unused|no takeover|no useful/i);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('dialog').count(), 0);
+});
+
+register('tablet rotation keeps the board and controls visible without overlapping checkers', async page => {
+  await loadFixture(page, moveFixture());
+  for(const viewport of [{width:1024,height:768},{width:1024,height:650},{width:768,height:1024},{width:1366,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport); await page.waitForTimeout(180);
+    const layout=await page.evaluate(()=>{
+      const board=document.querySelector('[data-testid=board]').getBoundingClientRect();
+      const controls=document.querySelector('.game-console').getBoundingClientRect();
+      let overlap=false;
+      document.querySelectorAll('.checker-stack').forEach(stack=>{
+        const pieces=[...stack.children].map(n=>n.getBoundingClientRect()).sort((a,b)=>a.top-b.top);
+        for(let i=1;i<pieces.length;i++)if(pieces[i].top<pieces[i-1].bottom+1)overlap=true;
+      });
+      return {ratio:board.width/board.height,controlsBottom:controls.bottom,overlap,overflow:document.documentElement.scrollWidth>innerWidth};
+    });
+    assert.ok(Math.abs(layout.ratio-4/3)<.01);
+    assert.equal(layout.overlap,false);
+    assert.equal(layout.overflow,false);
+    if(viewport.width>=768)assert.ok(layout.controlsBottom<=viewport.height,JSON.stringify({viewport,layout}));
+  }
+});
+
+register('music is opt-in, survives closing settings, and follows WAR PEACE and VENGEANCE', async page => {
+  await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
+  assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'off');
+  await soundSettings(page,async()=>{await button(page,'Play music').click();});
+  assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'on');
+  assert.equal(await page.locator('main').getAttribute('data-music-mode'),'PEACE');
+  await point(page,0).click();await waitSaved(page,s=>s.controller==='Black');
+  assert.equal(await page.locator('main').getAttribute('data-music-mode'),'VENGEANCE');
+  await soundSettings(page,async()=>{assert.equal(await button(page,'Pause music').isVisible(),true);await button(page,'Pause music').click();});
+  await loadFixture(page,moveFixture());
+  assert.equal(await page.locator('main').getAttribute('data-music-mode'),'WAR');
+  assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'off');
+});
+
+register('opening sound settings pauses the computer until the dialog closes',async page=>{
+  await loadFixture(page,makeSave({white:{0:15},black:{23:15},currentPlayer:'Black',controller:'Black',playSetupMode:'COMPUTER_BALANCED'}));
+  await button(page,'Sound').click();
+  const before=await saved(page);
+  await page.waitForTimeout(850);
+  assert.deepEqual((await saved(page)).board,before.board);
+  assert.deepEqual((await saved(page)).remainingDice,before.remainingDice);
+  await button(page,'Close sound settings').click();
+  await waitSaved(page,s=>s.moveLog.length>before.moveLog.length);
+});
+
 (async () => {
-  const browser = await chromium.launch({
+  const safari = process.env.BACKGAMMON_BROWSER === 'webkit';
+  const browser = await (safari ? webkit : chromium).launch({
     headless: true,
-    executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    executablePath: safari ? undefined : process.env.CHROMIUM_EXECUTABLE || undefined,
+    args: safari ? [] : ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
   let failures = 0;
   let passed = 0;
@@ -510,7 +608,7 @@ register('returning-player sound unlocks a native AudioContext and off/on choice
     console.log('PASS beta login through the visible UI');
     for (const entry of tests) {
       if (filter && !filter.test(entry.name)) continue;
-      const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, storageState: authenticatedStorage });
+      const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch:true, storageState: authenticatedStorage });
       const page = await context.newPage();
       page.setDefaultTimeout(5000);
       const errors = [];

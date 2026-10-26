@@ -1,0 +1,60 @@
+.game-app { --felt:#173c5a; --felt-dark:#0a213d; --point:#287b97; --point-light:#c8bb9a; --table-glow:#6bcee2; width:min(100%,var(--table-width,1120px)); min-height:0; padding:8px 10px 10px; container-type:inline-size; }
+.theme-war { --felt:#6e2536; --felt-dark:#32141e; --point:#be6759; --point-light:#d1ae7c; --table-glow:#f3a05c; }
+.game-app.theme-vengeance { --felt:#24102e; --felt-dark:#080911; --point:#673178; --point-light:#a397b1; --table-glow:#c47aff; background:radial-gradient(ellipse at 85% 0%,#42153666,transparent 50%),linear-gradient(145deg,#13101c,#080a12); border-radius:14px; box-shadow:0 0 35px #49135c44; }
+body:has(.theme-vengeance) { background:radial-gradient(ellipse at 50% 0%,#26102e,#080911 75%); }
+.game-header { min-height:44px; gap:10px; margin-bottom:7px; }
+.game-brand { gap:7px; }.game-brand h1 { font-size:25px; }.game-brand p { font-size:8px; letter-spacing:2.5px; margin-top:4px; }
+.brand-pieces { width:34px; height:34px; }.brand-pieces i { width:25px; height:25px; }
+.game-nav { gap:6px; }.game-nav button { min-height:44px; padding:8px 10px; }
+.player-setup { padding-bottom:7px; }.player-setup input { font-size:16px; padding:5px 8px; }
+.game-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; }
+.table-toolbar { display:grid; grid-template-columns:130px minmax(0,1fr) 138px; align-items:center; gap:10px; min-width:0; }
+.table-toolbar .mode-badge { min-height:43px; padding:3px 6px; }
+.table-toolbar .mode-badge strong { font-size:22px; line-height:1.15; }
+.table-toolbar .mode-badge.badge-control strong { font:500 16px/1.2 Georgia,serif; letter-spacing:.5px; }
+.table-toolbar .mode-badge small { font-size:8px; letter-spacing:.8px; }
+.badge-control { background:linear-gradient(115deg,#4b163e,#1b0d28 55%,#080a12); color:#f1d8ff; border-color:#b176d1; box-shadow:0 0 15px #8138aa55; }
+.turn-summary { padding:0; min-width:0; }.turn-summary strong { font-size:13px; }.turn-summary small { font-size:11px; margin-top:2px; }
+.table-toolbar .pip-summary { padding:0; border:0; }.pip-summary small { font-size:10px; }.pip-summary strong { font-size:20px; }
+.board-frame { width:100%; padding:7px; border-width:5px; box-shadow:inset 0 0 0 1px #e4b87099,0 6px 14px #0006; }
+.point-quadrant { background:radial-gradient(ellipse at 35% 15%,#ffffff13,transparent 56%),linear-gradient(135deg,var(--felt),var(--felt-dark)); }
+.point-ivory { background:linear-gradient(90deg,#0002,transparent 18%,#ffffff25 53%,#0001),var(--point-light); }
+.point-copper { background:linear-gradient(90deg,#0002,transparent 18%,#ffffff25 53%,#0001),var(--point); }
+.point-bottom .point-ivory { background:linear-gradient(90deg,#0002,transparent 18%,#ffffff25 53%,#0001),var(--point-light); }
+.point-bottom .point-copper { background:linear-gradient(90deg,#0002,transparent 18%,#ffffff25 53%,#0001),var(--point); }
+.point-number { color:#fff5df; text-shadow:0 1px 2px #000b; font-size:clamp(10px,1.6cqw,12px); font-weight:500; }
+.checker-stack { top:16px; gap:2px; }.point-bottom .checker-stack { bottom:16px; }
+.board-checker { width:min(94%,calc((37.5cqw - 40px)/5)); box-shadow:inset 0 1px 2px #ffffff70,inset 0 0 0 3px #ffffff09,0 2px 1px #0009; }
+.board-checker::after { content:''; position:absolute; inset:15%; border-radius:50%; border:1px solid #d5bb8450; box-shadow:inset 0 1px 2px #0005,0 1px 1px #fff3; }
+.board-checker+.board-checker,.point-bottom .board-checker+.board-checker { margin:0; }
+.theme-vengeance .board-frame { border-color:#17111f; background:linear-gradient(115deg,#4a354f,#17101f 45%,#090a10); box-shadow:inset 0 0 0 1px #bc79df,0 0 16px #8e3ab766,0 6px 16px #0008; }
+.theme-vengeance .board-bar { background:linear-gradient(90deg,#09090e,#4a2b50 45%,#100d18); border-color:#86548d; }
+.theme-vengeance .off-tray { background:linear-gradient(90deg,#100d18,#2c1b35,#100d18); border-color:#76557d; }
+.theme-vengeance .checker-dark { background:radial-gradient(circle at 32% 20%,#777181,#2a2532 35%,#0d0c14 65%,#504355 86%,#080910); border-color:#9f89b4; }
+.theme-vengeance .checker-light { background:radial-gradient(circle at 32% 22%,#fbf5ff,#ddd0e6 44%,#ab97b8 77%,#eee0f3 87%,#776181); border-color:#d4bfdf; }
+.theme-vengeance .game-die { outline:1px solid #bc90f4; box-shadow:0 0 12px #8138aa66; }
+.vengeance-sweep .board-frame { animation:vengeance-sweep 1.7s ease-out 1; }
+@keyframes vengeance-sweep { 0% { filter:brightness(.78); } 40% { filter:brightness(1.16); } 100% { filter:brightness(1); } }
+.game-console { display:grid; grid-template-columns:auto minmax(90px,1fr) auto; gap:6px 10px; align-items:center; padding:7px; max-height:none; overflow:visible; border-color:#684f43; background:#17131b; box-shadow:none; }
+.game-console .dice-panel { grid-column:1; grid-row:1; padding:0; background:none; }.dice-row { margin-top:2px; min-height:34px; }.game-die,.die-empty { width:32px; height:32px; padding:5px; gap:2px; }
+.game-console .main-actions { grid-column:2; grid-row:1; }.main-actions .primary-action { min-height:44px; font-size:13px; padding:8px; }
+.game-console .secondary-actions { grid-column:3; grid-row:1; display:flex; gap:5px; }.secondary-actions button { min-height:44px; padding:7px 9px; }
+.game-console .game-status { grid-column:1/-1; grid-row:2; min-height:0; padding:3px 5px; font-size:11px; line-height:1.4; background:transparent; }.game-status small { display:inline; margin:0 0 0 6px; font-size:11px; }
+.game-console .bear-off-choice,.game-console .cancel-resign,.game-console .tactic-note { grid-column:1/-1; }
+.game-console .save-note { display:none; }
+.game-footer { padding-top:6px; font-size:10px; gap:5px; }.game-footer .release-version { color:#dac3ef; white-space:nowrap; }
+.move-guide { margin-top:5px; color:#c7b798; font-size:11px; }.move-guide summary { min-height:25px; padding:4px 1px; cursor:pointer; }.move-guide .move-legend { padding:5px 0; }
+.toast-control { border-color:#bf79ee; border-left-color:#d2afff; background:linear-gradient(115deg,#35203ef5,#11101cf5); box-shadow:0 0 25px #8b319066,0 8px 28px #000a; }
+.sound-settings { width:min(540px,calc(100vw - 24px)); max-height:calc(100dvh - 28px); overflow:auto; padding:20px; border:1px solid #9679a3; border-radius:14px; background:#18131f; color:#eee3f4; }
+.sound-settings::backdrop { background:#08060bc9; }.sound-settings header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:15px; }.sound-settings h2 { font:400 24px Georgia,serif; margin:0; }
+.sound-settings button { min-height:44px; padding:9px 13px; border:1px solid #896d98; border-radius:7px; background:#302138; color:#f2e6f8; }.sound-settings button[aria-pressed=true] { background:#68417b; }.sound-settings p { font-size:12px; line-height:1.6; color:#c6b6ce; margin:12px 0; }
+.sound-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:center; }.sound-options label { font-size:12px; }.sound-options label span { float:right; }.sound-options input { display:block; width:100%; min-height:32px; accent-color:#bc90f4; }
+@container (max-width:760px) { .game-opponent { display:none; }.game-brand h1 { font-size:22px; } }
+@media(max-width:550px) {
+ .game-app { padding:7px 6px 10px; }.game-header { flex-wrap:wrap; gap:6px; }.game-brand { gap:4px; }.brand-pieces { display:none; }.game-brand h1 { font-size:20px; }.game-brand p { display:none; }.game-nav button { font-size:11px; padding:7px; }
+ .table-toolbar { grid-template-columns:106px minmax(0,1fr) 90px; gap:6px; }.table-toolbar .mode-badge strong { font-size:19px; }.table-toolbar .mode-badge.badge-control strong { font-size:13px; letter-spacing:.5px; }.table-toolbar .mode-badge small { font-size:7px; letter-spacing:0; }.turn-summary { gap:4px; }.turn-summary .tiny-checker { display:none; }.turn-summary strong { font-size:11px; }.turn-summary small { font-size:10px; }.pip-summary strong { font-size:18px; }.pip-summary small { font-size:8px; }.pip-summary>span { display:none; }
+ .game-console { grid-template-columns:auto minmax(0,1fr); gap:6px; }.game-console .secondary-actions { grid-column:1/-1; grid-row:3; justify-content:space-between; }.secondary-actions button { flex:1; }.game-status small { display:block; margin:3px 0 0; }.table-toolbar .mode-badge { min-height:44px; }
+ .game-footer { flex-wrap:wrap; }.game-footer>span:first-child { display:none; }.player-setup { gap:7px; }.player-setup label { font-size:10px; }.player-setup input { font-size:16px; }
+ .sound-options { grid-template-columns:1fr; }
+}
+@media(prefers-reduced-motion:reduce) { .vengeance-sweep .board-frame { animation:none; } }

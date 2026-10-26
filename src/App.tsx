@@ -3,7 +3,11 @@ import GameIntro from "./components/GameIntro";
 import RulesDialog from "./components/RulesDialog";
 import { chooseStrategicMove, getLandmineProfile } from "./game/strategy";
 import GameNarration, { type NarrationEvent } from "./components/GameNarration";
+import SoundSettings from "./components/SoundSettings";
+import useTableFit from "./components/useTableFit";
+import { createMusicPlayer, type MusicMode } from "./game/music";
 import "./game.css";
+import "./tablet.css";
 
 function readStoredValue(key: string): string | null {
   try { return window.localStorage.getItem(key); } catch { return null; }
@@ -1074,6 +1078,14 @@ function playPeaceViolationSound(): void {
   playTone(130.81, 0.85, 0.09, "sine", 0.42);
 }
 
+function playVengeanceSound(): void {
+  playTone(73.42, 1.8, .13, "triangle");
+  playTone(146.83, 1.5, .055, "sawtooth", .04);
+  playTone(155.56, 1.4, .045, "sine", .08);
+  [587.33, 554.37, 415.30, 293.66, 146.83].forEach((note, index) =>
+    playTone(note, .65, .045, "sine", .16 + index * .13));
+}
+
 function playWinFanfare(): void {
   const melody = [523, 659, 784, 1046, 1318];
   melody.forEach((frequency, index) => {
@@ -1308,6 +1320,14 @@ export default function App() {
   const narrationIdRef = useRef(0);
   const [showTestingPanel, setShowTestingPanel] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showSoundSettings, setShowSoundSettings] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(() => readStoredValue("warPeaceBackgammonMusicEnabledV1") === "on");
+  const [musicVolume, setMusicVolume] = useState(() => {
+    const stored = readStoredValue("warPeaceBackgammonMusicVolumeV1");
+    const value = stored === null ? .28 : Number(stored);
+    return Number.isFinite(value) ? Math.max(0, Math.min(.6, value)) : .28;
+  });
+  const musicRef = useRef<ReturnType<typeof createMusicPlayer> | null>(null);
   const [saveAvailable, setSaveAvailable] = useState(true);
   const [playSetupMode, setPlaySetupMode] = useState<PlaySetupMode>("MENU");
   const [computerStrategy, setComputerStrategy] = useState<AutoTestStrategy>("BALANCED");
@@ -1492,6 +1512,41 @@ export default function App() {
   const isComputerGame = playSetupMode === "COMPUTER_BALANCED" || playSetupMode === "COMPUTER_AGGRESSIVE";
   const isComputerController = isComputerGame && controller === "Black" && winner === null;
   const setupComplete = playSetupMode !== "MENU";
+  const vengeanceActive = controlState === "ENEMY_CONTROL" && remainingDice.length > 0 && legalMoves.length > 0 && winner === null;
+  const musicMode: MusicMode = vengeanceActive ? "VENGEANCE" : mode;
+  const tableFit = useTableFit(setupComplete && betaUnlocked, canEditPlayers);
+
+  useEffect(() => {
+    writeStoredValue("warPeaceBackgammonMusicEnabledV1", musicEnabled ? "on" : "off");
+    writeStoredValue("warPeaceBackgammonMusicVolumeV1", String(musicVolume));
+    musicRef.current?.setVolume(musicVolume);
+    musicRef.current?.setMode(musicMode);
+    if (!musicEnabled || !setupComplete || winner || autoTestRunning) musicRef.current?.stop();
+  }, [musicEnabled, musicVolume, musicMode, setupComplete, winner, autoTestRunning]);
+
+  useEffect(() => {
+    const stop = () => musicRef.current?.stop();
+    const onVisibility = () => { if (document.hidden) stop(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", stop);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("pagehide", stop); };
+  }, []);
+
+  function resumeAudio(): void {
+    if (soundEnabled) getAudioContext();
+    if (!musicEnabled || !setupComplete || winner || autoTestRunning) return;
+    musicRef.current ??= createMusicPlayer(getAudioContext);
+    musicRef.current.start(musicMode, musicVolume);
+  }
+
+  function toggleMusic(): void {
+    const next = !musicEnabled;
+    setMusicEnabled(next);
+    if (next) {
+      musicRef.current ??= createMusicPlayer(getAudioContext);
+      musicRef.current.start(musicMode, musicVolume);
+    } else musicRef.current?.stop();
+  }
   const canUndo = setupComplete && !winner && !diceRolling && !confirmResign && !isComputerController && !autoTestRunning &&
     history.length > 0 && history[history.length - 1].controller === controller;
 
@@ -2441,7 +2496,8 @@ export default function App() {
     setController(nextController);
     setControlState(nextControlState);
     if (soundEnabled) {
-      if (move.isHit && mode === "PEACE") playPeaceViolationSound();
+      if (peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0) playVengeanceSound();
+      else if (move.isHit && mode === "PEACE") playPeaceViolationSound();
       else if (move.isHit) playCaptureSound();
       else playClickSound();
     }
@@ -2450,15 +2506,15 @@ export default function App() {
     if (move.isHit) {
       const controlDetail = peaceViolationTriggersEnemyControl
         ? nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0
-          ? `${nextController} takes Enemy Control for the remaining moves.`
+          ? `${nextController} takes Enemy Control of ${currentPlayer}’s checkers using the unused dice. No extra roll.`
           : "No playable moves remain for Enemy Control."
         : controlState === "ENEMY_CONTROL"
           ? `${controller} chose this move under Enemy Control.`
           : `${opponent(currentPlayer)} must re-enter from the bar.`;
       narrate({
-        kind: mode === "WAR" ? "war-capture" : "peace-capture",
-        title: mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace",
-        detail: `${currentPlayer} captures on point ${move.to + 1}. ${controlDetail}`,
+        kind: peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0 ? "vengeance" : mode === "WAR" ? "war-capture" : "peace-capture",
+        title: peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0 ? "VENGEANCE" : mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace",
+        detail: `${mode === "PEACE" ? "Prisoner of Peace. " : ""}${currentPlayer} captures on point ${move.to + 1}. ${controlDetail}`,
         player: opponent(currentPlayer),
       });
     } else if (move.isBearOff) {
@@ -3038,7 +3094,7 @@ export default function App() {
     }
 
     const shouldAutoPassNoMoveTurn =
-      setupComplete && !showRules && !confirmResign &&
+      setupComplete && !showRules && !showSoundSettings && !confirmResign &&
       winner === null &&
       !diceRolling &&
       turnIsPlayable &&
@@ -3067,7 +3123,7 @@ export default function App() {
         autoPassTimerRef.current = null;
       }
     };
-  }, [setupComplete, showRules, confirmResign, awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner, autoTestRunning, autoTestSpeed]);
+  }, [setupComplete, showRules, showSoundSettings, confirmResign, awaitingModeChoice, currentPlayer, diceRolling, legalMoves.length, remainingDice, turnIsPlayable, turnMoveCount, winner, autoTestRunning, autoTestSpeed]);
 
   useEffect(() => {
     if (!autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
@@ -3103,7 +3159,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!setupComplete || showRules || confirmResign || autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
+    if (!setupComplete || showRules || showSoundSettings || confirmResign || autoTestRunning || autoTestError || diceRolling || draggingPoint !== null) return;
     if (!isComputerController || winner !== null) return;
 
     const delay = remainingDice.length > 0 && legalMoves.length === 0 && turnMoveCount === 0 ? 1150 : 650;
@@ -3134,6 +3190,7 @@ export default function App() {
   }, [
     setupComplete,
     showRules,
+    showSoundSettings,
     confirmResign,
     autoTestRunning,
     autoTestError,
@@ -3380,7 +3437,7 @@ export default function App() {
   const bottomRightRow = [5, 4, 3, 2, 1, 0];
 
   const modeIsWar = mode === "WAR";
-  const enemyControl = controlState === "ENEMY_CONTROL";
+  const enemyControl = vengeanceActive;
   const neutralModeState = awaitingModeChoice || (!openingDice && remainingDice.length === 0 && moveLog.length === 0);
   const shellWidth = "min(calc(100vw - 12px), 1420px)";
   const activeTurnIsWhite = currentPlayer === "White";
@@ -3539,10 +3596,14 @@ export default function App() {
     canChooseHere ? "You won the opening roll. Choose WAR or PEACE." : message;
 
   return (
-    <main className="game-app" onDragStart={(event) => event.preventDefault()}
-      onPointerDownCapture={() => { if (soundEnabled) getAudioContext(); }}
-      onKeyDownCapture={() => { if (soundEnabled) getAudioContext(); }}>
+    <main ref={tableFit.appRef} className={"game-app theme-" + (enemyControl ? "vengeance vengeance-sweep" : modeIsWar ? "war" : "peace")}
+      data-music-mode={musicMode} onDragStart={(event) => event.preventDefault()}
+      onPointerDownCapture={resumeAudio} onKeyDownCapture={resumeAudio}>
       <RulesDialog open={showRules} onClose={() => setShowRules(false)} />
+      <SoundSettings open={showSoundSettings} onClose={() => setShowSoundSettings(false)} soundEnabled={soundEnabled}
+        onSoundToggle={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) playSoundTest(); }}
+        narrationEnabled={narrationEnabled} onNarrationToggle={() => setNarrationEnabled(value => !value)}
+        musicEnabled={musicEnabled} onMusicToggle={toggleMusic} volume={musicVolume} onVolumeChange={setMusicVolume} />
       {!setupComplete ? <GameIntro
         onPlayBalanced={() => startComputerGame("BALANCED")}
         onPlayAggressive={() => startComputerGame("CONTROLLED_COMEBACK")}
@@ -3550,6 +3611,7 @@ export default function App() {
         onShowRules={() => setShowRules(true)}
         onResume={hasSavedGame ? loadSavedGame : undefined}
       /> : <>
+        <div className="game-table-shell" ref={tableFit.shellRef}>
         <header className="game-header">
           <div className="game-brand"><span className="brand-pieces" aria-hidden="true"><i className="checker-dark" /><i className="checker-light" /></span>
             <div><h1>War <span>&amp;</span> Peace</h1><p>BACKGAMMON</p></div>
@@ -3557,6 +3619,7 @@ export default function App() {
           <p className="game-opponent">{playSetupMode === "TWO_PLAYERS" ? "Two players · pass & play" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Computer 2 · Aggressive" : "Computer 1 · Balanced"}</p>
           <nav className="game-nav" aria-label="Game navigation">
             <button type="button" onClick={() => setShowRules(true)}>How to play</button>
+            <button type="button" onClick={() => setShowSoundSettings(true)}>Sound</button>
             <button type="button" onClick={backToGameMenu}>Menu</button>
           </nav>
         </header>
@@ -3571,6 +3634,21 @@ export default function App() {
         </section>}
 
         <section className="game-layout" aria-label="Backgammon table">
+          <div className="table-toolbar">
+            <div className={"mode-badge " + (enemyControl ? "badge-control" : neutralModeState ? "badge-neutral" : modeIsWar ? "badge-war" : "badge-peace")} data-testid="mode">
+              <small>{enemyControl ? "PEACE · ENEMY CONTROL" : "CURRENT MODE"}</small>
+              <strong>{enemyControl ? "VENGEANCE" : neutralModeState ? "WAR & PEACE" : mode}</strong>
+            </div>
+            <div className="turn-summary" data-testid="turn">
+              <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
+              <div><strong>{winner ? winner + " wins" : enemyControl ? controller + " commands" : currentPlayer + " to move"}</strong>
+                <small>{enemyControl ? currentPlayer + "’s checkers · unused dice" : currentPlayer === "White" ? whitePlayerName : blackPlayerName}</small></div>
+            </div>
+            <div className="pip-summary" aria-label="Pip counts">
+              <div><small>WHITE</small><strong>{whitePipCount}</strong></div>
+              <span>PIPS</span><div><small>BLACK</small><strong>{blackPipCount}</strong></div>
+            </div>
+          </div>
           <div className="board-frame" data-testid="board">
             <div className="board-half">
               {renderQuadrant(topLeftRow, true)}
@@ -3588,24 +3666,11 @@ export default function App() {
           </div>
 
           <aside className="game-console" aria-label="Game controls">
-            <div className={"mode-badge " + (enemyControl ? "badge-control" : neutralModeState ? "badge-neutral" : modeIsWar ? "badge-war" : "badge-peace")} data-testid="mode">
-              <small>{enemyControl ? "PEACE VIOLATION" : "CURRENT MODE"}</small>
-              <strong>{enemyControl ? "ENEMY CONTROL" : neutralModeState ? "WAR & PEACE" : mode}</strong>
-            </div>
-            <div className="turn-summary" data-testid="turn">
-              <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
-              <div><strong>{winner ? winner + " wins" : currentPlayer + " to move"}</strong>
-                <small>{enemyControl ? controller + " controls " + currentPlayer + "’s checkers" : currentPlayer === "White" ? whitePlayerName : blackPlayerName}</small></div>
-            </div>
             <div className="dice-panel">
               <span className="console-label">{awaitingModeChoice ? "OPENING ROLL" : "DICE REMAINING"}</span>
               <div className={"dice-row " + (diceRolling ? "dice-rolling" : "")} data-testid="dice">
                 {displayDice.length ? displayDice.map(renderDie) : <><span className="die-empty">·</span><span className="die-empty">·</span></>}
               </div>
-            </div>
-            <div className="pip-summary" aria-label="Pip counts">
-              <div><small>WHITE</small><strong>{whitePipCount}</strong></div>
-              <span>PIPS</span><div><small>BLACK</small><strong>{blackPipCount}</strong></div>
             </div>
             <div className="main-actions">
               {gamePhase === "OPENING_ROLL" && <button className="primary-action" type="button" disabled={!canRollOpening || autoTestRunning} onClick={rollOpening}>Roll opening dice</button>}
@@ -3624,10 +3689,8 @@ export default function App() {
             </div>
             <div className="secondary-actions">
               <button type="button" disabled={!canUndo} onClick={undoMove}>Undo move</button>
-              <button type="button" aria-pressed={soundEnabled} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) playSoundTest(); }}>Sound {soundEnabled ? "on" : "off"}</button>
               <button type="button" aria-expanded={showRecords} onClick={() => setShowRecords((value) => !value)}>Records</button>
               <button type="button" disabled={!canResign || autoTestRunning} onClick={resignGame}>{confirmResign ? "Confirm resign" : "Resign"}</button>
-              <button type="button" className="narration-toggle" aria-pressed={narrationEnabled} onClick={() => setNarrationEnabled((value) => !value)}>Narration {narrationEnabled ? "on" : "off"}</button>
             </div>
             {narrationEnabled && !winner && playSetupMode.startsWith("COMPUTER_") && computerLandmineProfile.tier !== "NONE" && <section className="tactic-note" aria-label="Computer tactics" data-testid="computer-tactics">
               <strong>Computer: {computerLandmineProfile.exposureAllowed ? computerLandmineProfile.label : "landmines on hold"}</strong>
@@ -3638,6 +3701,7 @@ export default function App() {
             <p className="save-note">{diagnosticGameRef.current ? "Diagnostic game · personal save preserved" : saveAvailable ? "Progress saves on this device." : "Saving unavailable in this browser."}</p>
           </aside>
         </section>
+        <details className="move-guide"><summary>Move guide</summary>
         <div className="move-legend" aria-label="Move highlight guide">
           <span><i className="legend-source" aria-hidden="true" />Gold dashes: move from</span>
           <span><i className="legend-selected" aria-hidden="true">✓</i>Selected</span>
@@ -3645,7 +3709,9 @@ export default function App() {
           <span><i className="legend-capture" aria-hidden="true">×</i>Coral: capture</span>
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
-        <footer className="game-footer"><span>Tap a framed source, then a destination. You can also drag.</span><span>White → 24 &nbsp;·&nbsp; Black → 1</span></footer>
+        </details>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.3.0</span></footer>
+        </div>
 
         {showRecords && <section className="records-panel">
           <div className="section-heading"><h2>Player records</h2><button type="button" onClick={() => setShowRecords(false)}>Close</button></div>
@@ -3659,8 +3725,8 @@ export default function App() {
       {setupComplete && narrationEnabled && narration && <GameNarration key={narration.id} event={narration} onDismiss={() => setNarration(null)} />}
       {setupComplete && turnBanner && <div className={"turn-toast " + (turnBanner.includes("PEACE VIOLATION") ? "toast-control" : "")} role="status">
         <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
-        <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? "Prisoner of Peace" : turnBanner}</strong>
-          {turnBanner.startsWith("PEACE VIOLATION") && <small>Peace violation · {controller} takes Enemy Control</small>}</div>
+        <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? enemyControl ? "VENGEANCE" : "Prisoner of Peace" : turnBanner}</strong>
+          {turnBanner.startsWith("PEACE VIOLATION") && <small>{enemyControl ? `${controller} commands ${currentPlayer}’s unused moves` : "Capture complete · no borrowed moves remain"}</small>}</div>
       </div>}
 
       {PUBLIC_SHOW_TESTING_TOOLS && <section className="testing-panel" aria-label="Developer testing tools">

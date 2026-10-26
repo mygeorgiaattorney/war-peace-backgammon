@@ -1,10 +1,16 @@
 # Project status — War & Peace Backgammon
 
-- **Last reviewed:** October 25, 2026
+- **Last reviewed:** October 26, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.2.0 — deployed October 25, 2026
+- **Released version:** 0.3.0 — October 26, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.3.0 — iPad presentation
+
+Applied the approved larger-board design to the actual game. Controls now sit beneath the 4:3 board; measured height fitting limits size after rotation. Checker stacks have positive gaps. WAR and PEACE have distinct red/blue boards. Useful Enemy Control is presented as VENGEANCE with violet/obsidian materials, a single lighting sweep, dedicated capture narration and cue, and dark heartbeat music. Captures with no playable unused moves do not advertise a takeover. A header Sound dialog separates music, effects, volume, and narration; settings pause computer play. Music is gesture activated, pauses on background/menu/win, and does not affect dice randomness. Rules include the 26 approved interactive example states and clarify capture-first victim control. Saved-game format and local player records are unchanged.
+
+Validation: 25 engine and 11 strategy regressions; 27 Chromium browser scenarios with touch enabled; 15 tablet/phone layouts across three themes, including 1024×650, 1024×768, 768×1024, 1366×900, and 320×700; browser touch move; production build; targeted lint of new components and audio module. No runtime errors, checker overlap, or horizontal overflow in the inspected layouts. Physical iPad audio and playing feel remain to be checked on the device.
 
 ## Where the project resumed
 
