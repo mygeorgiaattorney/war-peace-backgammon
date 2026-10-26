@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.4.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.4.1**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -24,7 +24,7 @@ If either die can legally bear off the selected checker, choose the die in the c
 
 Full frames identify the moves: gold dashes mark playable sources, an ivory frame marks the selected source, cyan marks destinations, coral marks captures, and violet traces the last move. A bar entry and bearing-off destination use matching frames. The board checkers are approximately 5% smaller than in 0.1.0.
 
-**Narration** turns the illustrated gameplay notices on or off. **Sound** separately controls the audio, including a forceful WAR capture cue and a somber descending PEACE capture cue. Both preferences stay in this browser.
+**Messages on/off**, above the board, shows or hides the illustrated gameplay announcements and turn notices. They appear across the center of the board, remain easy to dismiss, and do not block checker moves. The same switch is available in **Sound**, alongside separate audio controls. Preferences stay in this browser.
 
 ## The rules that distinguish this game
 
@@ -46,6 +46,10 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 ## Saved progress
 
 Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.4.1 — centered, optional game messages
+
+Illustrated announcements and ordinary turn notices appear at the center of the board on desktop and iPad. A visible **Messages on/off** button above the board controls both kinds of pop-up and remembers the choice after reload. Switching off dismisses the current message immediately. Music and sound effects retain their own controls; current-player information, legal-move guidance, and warnings remain available.
 
 ## Version 0.4.0 — whole-roll VENGEANCE
 

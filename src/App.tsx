@@ -1412,7 +1412,12 @@ export default function App() {
 
   useEffect(() => {
     writeStoredValue("warPeaceBackgammonNarrationEnabledV1", narrationEnabled ? "on" : "off");
-    if (!narrationEnabled) setNarration(null);
+    if (!narrationEnabled) {
+      setNarration(null);
+      setTurnBanner(null);
+      if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
+      if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
+    }
   }, [narrationEnabled]);
 
   useEffect(() => () => {
@@ -1659,6 +1664,7 @@ export default function App() {
   }
 
   function flashBanner(text: string, duration = 1300): void {
+    if (!narrationEnabled) return;
     if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
     setTurnBanner(text);
     bannerTimerRef.current = setTimeout(() => setTurnBanner(null), duration);
@@ -3630,6 +3636,10 @@ export default function App() {
         </section>}
           <nav className="game-nav" aria-label="Game navigation">
             <button type="button" onClick={() => setShowRules(true)}>How to play</button>
+            <button type="button" className="messages-toggle" aria-pressed={narrationEnabled}
+              title="Show or hide game pop-up messages" onClick={() => setNarrationEnabled(value => !value)}>
+              Messages {narrationEnabled ? "on" : "off"}
+            </button>
             <button type="button" onClick={() => setShowSoundSettings(true)}>Sound</button>
             <button type="button" onClick={backToGameMenu}>Menu</button>
           </nav>
@@ -3667,6 +3677,12 @@ export default function App() {
               {renderQuadrant(bottomRightRow, false)}
               {renderOffTray("Black")}
             </div>
+            {narrationEnabled && narration && <GameNarration key={narration.id} event={narration} onDismiss={() => setNarration(null)} />}
+            {narrationEnabled && !narration && turnBanner && <div className={"turn-toast " + (turnBanner.includes("PEACE VIOLATION") ? "toast-control" : "")} role="status">
+              <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
+              <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? enemyControl ? "VENGEANCE" : "Prisoner of Peace" : turnBanner}</strong>
+                {turnBanner.startsWith("PEACE VIOLATION") && <small>{enemyControl ? `${controller} commands ${currentPlayer}’s unused moves` : "Capture complete · no borrowed moves remain"}</small>}</div>
+            </div>}
           </div>
 
           <aside className="game-console" aria-label="Game controls">
@@ -3714,7 +3730,7 @@ export default function App() {
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
         </details>
-        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.4.0</span></footer>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.4.1</span></footer>
         </div>
 
         {showRecords && <section className="records-panel">
@@ -3726,13 +3742,6 @@ export default function App() {
 
       {setupComplete && draggingPoint !== null && dragPosition && <div className={"drag-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" style={{ left: dragPosition.x, top: dragPosition.y }} />}
       {warningMessage && <div className="game-warning" role="alert">{warningMessage}</div>}
-      {setupComplete && narrationEnabled && narration && <GameNarration key={narration.id} event={narration} onDismiss={() => setNarration(null)} />}
-      {setupComplete && turnBanner && <div className={"turn-toast " + (turnBanner.includes("PEACE VIOLATION") ? "toast-control" : "")} role="status">
-        <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
-        <div><strong>{turnBanner.startsWith("PEACE VIOLATION") ? enemyControl ? "VENGEANCE" : "Prisoner of Peace" : turnBanner}</strong>
-          {turnBanner.startsWith("PEACE VIOLATION") && <small>{enemyControl ? `${controller} commands ${currentPlayer}’s unused moves` : "Capture complete · no borrowed moves remain"}</small>}</div>
-      </div>}
-
       {PUBLIC_SHOW_TESTING_TOOLS && <section className="testing-panel" aria-label="Developer testing tools">
         <button className="testing-toggle" type="button" aria-expanded={showTestingPanel} onClick={() => setShowTestingPanel((value) => !value)}>{showTestingPanel ? "Hide testing tools" : "Testing tools"}</button>
         {showTestingPanel && <>

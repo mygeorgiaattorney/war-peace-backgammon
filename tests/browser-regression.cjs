@@ -64,6 +64,7 @@ const button = (page, name) => page.getByRole('button', { name, exact: true });
 
 async function soundSettings(page, action) {
   await button(page, 'Sound').click();
+  await page.getByRole('dialog', { name: 'Sound & messages', exact: true }).waitFor({ state: 'visible' });
   await action();
   await button(page, 'Close sound settings').click();
 }
@@ -410,31 +411,59 @@ register('full-point frames distinguish legal sources, selected destination, and
   assert.equal(await page.locator('.last-move-frame').count(), 2);
 });
 
-register('optional narration distinguishes WAR and PEACE captures and persists its off setting', async page => {
+register('centered game messages have a visible toggle and remember the off setting', async page => {
   const capture = mode => makeSave({ white: { 0: 1, 18: 14 }, black: { 1: 1, 5: 14 }, remainingDice: [1], mode });
-  await loadFixture(page, capture('WAR'));
-  await soundSettings(page, async () => assert.equal(await button(page, 'Narration on').isVisible(), true));
-  await point(page, 0).click();
-  await point(page, 1).click();
-  await page.getByTestId('game-narration').waitFor({ state: 'visible' });
-  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of War/);
+  async function centeredMessage(selector) {
+    await page.waitForFunction(selector => {
+      const message = document.querySelector(selector);
+      const board = message?.closest('[data-testid="board"]');
+      if (!message || !board) return false;
+      const m = message.getBoundingClientRect(), b = board.getBoundingClientRect();
+      return Math.abs(m.left + m.width / 2 - b.left - b.width / 2) < 1 &&
+        Math.abs(m.top + m.height / 2 - b.top - b.height / 2) < 1 &&
+        m.left >= b.left && m.right <= b.right && m.top >= b.top && m.bottom <= b.bottom;
+    }, selector);
+  }
+  for (const viewport of [{width:1366,height:900}, {width:1024,height:768}, {width:912,height:590}, {width:768,height:1024}, {width:390,height:844}]) {
+    await page.setViewportSize(viewport);
+    await loadFixture(page, capture('WAR'));
+    assert.equal(await button(page, 'Messages on').isVisible(), true);
+    await centeredMessage('.turn-toast');
+    await point(page, 0).click();
+    await point(page, 1).click();
+    await page.getByTestId('game-narration').waitFor({ state: 'visible' });
+    assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of War/);
+    await centeredMessage('[data-testid="game-narration"]');
+    assert.equal(await page.locator('.turn-toast').count(), 0, 'Only one message appears at a time.');
+    if (process.env.BACKGAMMON_SCREENSHOT_DIRECTORY) {
+      fs.mkdirSync(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY, `centered-messages-${viewport.width}x${viewport.height}.png`), fullPage: true });
+    }
+  }
   await button(page, 'Dismiss game narration').click();
   assert.equal(await page.getByTestId('game-narration').count(), 0);
-  await soundSettings(page, async () => { await button(page, 'Narration on').click(); });
+  await button(page, 'Messages on').click();
   await page.waitForFunction(() => localStorage.getItem('warPeaceBackgammonNarrationEnabledV1') === 'off');
   await loadFixture(page, capture('WAR'));
-  await soundSettings(page, async () => assert.equal(await button(page, 'Narration off').isVisible(), true));
+  assert.equal(await button(page, 'Messages off').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('.turn-toast').count(), 0, 'The preference also hides ordinary turn notices after reload.');
+  await soundSettings(page, async () => assert.equal(await page.getByRole('dialog').getByRole('button', { name: 'Messages off', exact: true }).isVisible(), true));
   await point(page, 0).click();
   await point(page, 1).click();
   await waitSaved(page, s => s.bar.Black === 1);
   assert.equal(await page.getByTestId('game-narration').count(), 0);
-  await soundSettings(page, async () => { await button(page, 'Narration off').click(); });
+  await soundSettings(page, async () => { await page.getByRole('dialog').getByRole('button', { name: 'Messages off', exact: true }).click(); });
+  assert.equal(await button(page, 'Messages on').getAttribute('aria-pressed'), 'true');
   await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
   await point(page, 0).click();
   await page.getByTestId('game-narration').waitFor({ state: 'visible' });
   assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
   assert.match(await page.getByTestId('game-narration').innerText(), /Black \(opponent\).*ALL moves/s);
   await soundSettings(page, async () => assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.'));
+  await button(page, 'Messages on').click();
+  assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching off dismisses the current message immediately.');
+  await button(page, 'Messages off').click();
+  assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching on does not replay dismissed messages.');
 });
 
 register('malformed saved player names and opening dice are rejected without breaking the menu', async page => {

@@ -1,9 +1,9 @@
 .game-narration {
   pointer-events:none;
   --narration-accent:#f4a079;
-  position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
   display:grid; grid-template-columns:58px minmax(0,1fr) 28px; align-items:center; gap:12px;
-  width:min(500px,calc(100vw - 28px)); padding:15px 12px 15px 16px;
+  width:min(500px,calc(100% - 28px)); padding:15px 12px 15px 16px;
   border:1px solid var(--narration-accent); border-left:4px solid var(--narration-accent);
   border-radius:12px; background:linear-gradient(120deg,#522820f7,#1c1714fa 72%);
   color:#fff0d6; box-shadow:0 12px 40px #000a; z-index:10012;
@@ -17,6 +17,7 @@
 .narration-checker { position:absolute; right:0; bottom:-1px; width:20px; height:20px; border:1px solid #ceb68d; border-radius:50%; box-shadow:0 2px 5px #0009; }
 .narration-eyebrow { display:block; font-size:8px; line-height:1.5; letter-spacing:1.6px; color:var(--narration-accent); margin-bottom:4px; }
 .narration-copy strong { display:block; font-family:Georgia,serif; font-weight:400; font-size:22px; line-height:1.1; }
+.narration-copy { min-width:0; overflow-wrap:anywhere; }
 .narration-copy p { margin:6px 0 0; color:#e1d5c4; font-size:12px; line-height:1.45; }
 .narration-dismiss { pointer-events:auto; align-self:start; width:28px; height:32px; padding:0; font:22px/1 sans-serif; color:#dfcfb7; background:transparent; border:0; border-radius:4px; cursor:pointer; }
 .narration-dismiss:hover,.narration-dismiss:focus-visible { background:#ffffff18; outline:1px solid var(--narration-accent); }
@@ -28,7 +29,7 @@
 @keyframes narration-enter { from { opacity:0; translate:0 8px; } to { opacity:1; translate:0 0; } }
 @media(max-width:720px) {
   .tactic-note { grid-column:1/-1; }
-  .game-narration { bottom:12px; padding:12px 10px; gap:9px; grid-template-columns:44px minmax(0,1fr) 28px; }
+  .game-narration { padding:12px 10px; gap:9px; grid-template-columns:44px minmax(0,1fr) 28px; }
   .narration-emblem { width:44px; height:44px; }
   .narration-copy strong { font-size:19px; }
   .narration-copy p { font-size:11px; }
