@@ -12,6 +12,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            filter: ''
+          - browser: webkit
+            filter: 'free dice choice|used doubles|selected die controls|previous five rolls|normal doubles|iPad messages|centered game messages|VENGEANCE changes|tablet rotation|returning-player sound|music is opt-in'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,11 +32,18 @@ jobs:
       - name: Type check and build
         run: npm run build
       - name: Install browser for interface checks
-        run: npm exec -- playwright install --with-deps chromium
+        run: |
+          # The Azure Ubuntu mirror can stall WebKit's system-package downloads.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          npm exec -- playwright install --with-deps ${{ matrix.browser }}
       - name: Check messages and responsive game interface
         env:
           BACKGAMMON_TEST_URL: http://127.0.0.1:4173/war-peace-backgammon/
-          BACKGAMMON_SCREENSHOT_DIRECTORY: /tmp/backgammon-browser-regression
+          BACKGAMMON_BROWSER: ${{ matrix.browser }}
+          BACKGAMMON_TEST_FILTER: ${{ matrix.filter }}
+          BACKGAMMON_SCREENSHOT_DIRECTORY: /tmp/backgammon-browser-regression/${{ matrix.browser }}
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/backgammon-preview.log" 2>&1 &
           preview_pid=$!
@@ -42,7 +57,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: game-interface-checks
+          name: game-interface-checks-${{ matrix.browser }}
           path: /tmp/backgammon-browser-regression
           if-no-files-found: ignore
           retention-days: 7

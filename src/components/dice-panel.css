@@ -1,0 +1,23 @@
+.game-console .game-die { appearance:none; touch-action:manipulation; cursor:pointer; }
+.game-console .game-die:disabled:not(.die-used) { opacity:1; cursor:default; }
+.game-console .game-die.die-used { opacity:.25; filter:saturate(.25); cursor:default; }
+.game-console .game-die[aria-pressed="true"] { outline:2px solid #76e8ff; outline-offset:3px; box-shadow:0 0 12px #76e8ff66; }
+.game-console .game-die:focus-visible { outline:2px solid #fff0c5; outline-offset:3px; }
+.dice-help { margin:5px 0 0; color:#c9b68f; font-size:10px; line-height:1.3; }
+.roll-history { margin-top:9px; padding-top:6px; border-top:1px solid #b59d7526; }
+.roll-history .console-label { font-size:7px; letter-spacing:.7px; }
+.roll-history ol { display:grid; gap:3px; justify-items:center; margin:6px 0 0; padding:0; list-style:none; }
+.roll-history li { display:grid; grid-template-columns:48px auto; align-items:center; gap:7px; min-height:18px; color:#c8bda9; opacity:.55; }
+.roll-history-player { text-align:left; font-size:9px; }
+.history-player-short { display:none; }
+.roll-history-pair { display:flex; gap:5px; }
+.history-die { width:18px; height:18px; padding:3px; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:1px; border:1px solid #ad9a74; border-radius:3px; }
+@media(max-height:700px) and (min-width:800px) {
+  .dice-help { font-size:9px; margin-top:3px; }
+  .roll-history { margin-top:5px; padding-top:4px; }
+  .roll-history ol { margin-top:4px; gap:3px 6px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .roll-history li { min-height:14px; grid-template-columns:10px auto; gap:3px; }
+  .history-player-full { display:none; }
+  .history-player-short { display:inline; }
+  .history-die { width:14px; height:14px; padding:2px; }
+}

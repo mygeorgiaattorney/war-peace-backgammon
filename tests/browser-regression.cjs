@@ -100,12 +100,15 @@ async function chooseTwoPlayers(page) {
 }
 
 async function queueDice(page, dice) {
-  // Deterministic test input only. Gameplay is still driven through real UI.
-  // Sound is disabled so audio synthesis cannot consume the queued values.
+  // Test-only samples for the actual secure dice generator. Normal play uses
+  // the browser's unmodified crypto API; no production seeding hook is added.
   await page.evaluate(values => {
-    const original = Math.random;
-    const queued = values.map(die => (die - 0.5) / 6);
-    Math.random = () => queued.length ? queued.shift() : original();
+    const original = crypto.getRandomValues.bind(crypto);
+    const queued = values.map(die => die - 1);
+    Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: array => {
+      if (array instanceof Uint32Array && array.length === 1 && queued.length) { array[0] = queued.shift(); return array; }
+      return original(array);
+    }});
   }, dice);
 }
 
@@ -317,7 +320,7 @@ register('entering home with six does not force a bear-off after reload, undo, o
   await point(page, 23).click();
   const entered = await waitSaved(page, s => s.turnMoveCount === 1 && s.board[17].count === 0);
   assert.equal(entered.bearOffPriorityAtTurnStart, false);
-  assert.equal(entered.version, 3);
+  assert.equal(entered.version, 4);
   await button(page, 'Menu').click();
   await button(page, 'Continue saved game').click();
   await point(page, 18).click();
@@ -414,6 +417,11 @@ register('full-point frames distinguish legal sources, selected destination, and
 register('centered game messages have a visible toggle and remember the off setting', async page => {
   const capture = mode => makeSave({ white: { 0: 1, 18: 14 }, black: { 1: 1, 5: 14 }, remainingDice: [1], mode });
   async function centeredMessage(selector) {
+    await page.locator(selector).waitFor({state:'visible'});
+    const initial = await page.locator(selector).evaluate(node => {
+      const m=node.getBoundingClientRect(),b=node.closest('[data-testid="board"]').getBoundingClientRect();
+      return {message:{x:m.x,y:m.y,width:m.width,height:m.height},board:{x:b.x,y:b.y,width:b.width,height:b.height}};
+    });
     await page.waitForFunction(selector => {
       const message = document.querySelector(selector);
       const board = message?.closest('[data-testid="board"]');
@@ -422,7 +430,7 @@ register('centered game messages have a visible toggle and remember the off sett
       return Math.abs(m.left + m.width / 2 - b.left - b.width / 2) < 1 &&
         Math.abs(m.top + m.height / 2 - b.top - b.height / 2) < 1 &&
         m.left >= b.left && m.right <= b.right && m.top >= b.top && m.bottom <= b.bottom;
-    }, selector);
+    }, selector).catch(error => { throw new Error(`${error.message}; initial geometry=${JSON.stringify(initial)}`); });
   }
   for (const viewport of [{width:1366,height:900}, {width:1024,height:768}, {width:912,height:590}, {width:768,height:1024}, {width:390,height:844}]) {
     await page.setViewportSize(viewport);
@@ -457,13 +465,14 @@ register('centered game messages have a visible toggle and remember the off sett
   await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
   await point(page, 0).click();
   await page.getByTestId('game-narration').waitFor({ state: 'visible' });
-  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /VENGEANCE — ALL MOVES/);
   assert.match(await page.getByTestId('game-narration').innerText(), /Black \(opponent\).*ALL moves/s);
   await soundSettings(page, async () => assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.'));
   await button(page, 'Messages on').click();
   assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching off dismisses the current message immediately.');
   await button(page, 'Messages off').click();
-  assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching on does not replay dismissed messages.');
+  await page.getByTestId('game-narration').waitFor({ state: 'visible' });
+  assert.match(await page.getByTestId('game-narration').innerText(), /VENGEANCE — ALL MOVES/, 'Switching on explains the active VENGEANCE turn.');
 });
 
 register('malformed saved player names and opening dice are rejected without breaking the menu', async page => {
@@ -532,7 +541,7 @@ register('VENGEANCE changes the whole table and leaves ownership with the moving
   assert.match(await page.getByTestId('mode').innerText(), /VENGEANCE/);
   assert.match(await page.getByTestId('turn').innerText(), /BLACK MAKES ALL MOVES.*White’s checkers/s);
   assert.equal(await point(page, 0).locator('.checker-light').count(), 1);
-  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /VENGEANCE — ALL MOVES/);
   await button(page, 'Dismiss game narration').click();
   await point(page, 4).click();
   await point(page, 6).click();
@@ -753,6 +762,143 @@ register('opening sound settings pauses the computer until the dialog closes',as
   assert.deepEqual((await saved(page)).remainingDice,before.remainingDice);
   await button(page,'Close sound settings').click();
   await waitSaved(page,s=>s.moveLog.length>before.moveLog.length);
+});
+
+
+register('free dice choice supports smaller larger left and right first for both colors', async page => {
+  for (const player of ['White','Black']) for (const roll of [[6,4],[4,6]]) for (const first of [4,6]) {
+    const fixture = player === 'White' ? makeSave({white:{0:1,18:14},black:{23:15},remainingDice:roll}) :
+      makeSave({white:{0:15},black:{23:1,5:14},remainingDice:roll,currentPlayer:'Black',controller:'Black'});
+    await loadFixture(page,fixture);
+    const dice = page.getByTestId('dice').locator('.game-die');
+    assert.equal(await dice.count(),2);
+    for (const die of await dice.all()) assert.equal(await die.isEnabled(),true);
+    const index = roll.indexOf(first), from = player==='White'?0:23, direction=player==='White'?1:-1;
+    if (index===1) await dice.nth(index).click(); // A move also works without choosing a die first.
+    await point(page,from).click(); await point(page,from+direction*first).click();
+    await waitSaved(page,state=>state.turnMoveCount===1);
+    assert.equal(await dice.count(),2,'Using a die never removes or reorders it.');
+    assert.deepEqual(await dice.evaluateAll(nodes=>nodes.map(node=>Number(node.dataset.dieValue))),roll);
+    assert.equal(await dice.nth(index).getAttribute('data-used'),'true');
+    assert.equal(await dice.nth(1-index).getAttribute('data-used'),'false');
+    const opacity=await dice.nth(index).evaluate(node=>Number(getComputedStyle(node).opacity));
+    assert.ok(opacity<.4,'A consumed die is visibly dim.');
+    await point(page,from+direction*first).click(); await point(page,from+direction*10).click();
+    await waitSaved(page,state=>state.remainingDice.length===0);
+    assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="true"]').count(),2);
+    await button(page,'Undo move').click();
+    await waitSaved(page,state=>state.remainingDice.length===1);
+    assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="true"]').count(),1);
+  }
+});
+
+register('used doubles keep their exact slots through undo and reload', async page => {
+  await loadFixture(page,makeSave({white:{0:1,18:14},black:{23:15},remainingDice:[2,2,2,2]}));
+  const dice=page.getByTestId('dice').locator('.game-die');
+  await dice.nth(3).click(); await point(page,0).click(); await point(page,2).click();
+  await waitSaved(page,state=>state.usedDiceIndices?.includes(3));
+  assert.equal(await dice.count(),4);
+  assert.equal(await dice.nth(3).getAttribute('data-used'),'true');
+  assert.equal(await dice.nth(0).getAttribute('data-used'),'false');
+  await button(page,'Undo move').click();
+  await waitSaved(page,state=>state.usedDiceIndices?.length===0);
+  await dice.nth(1).click(); await point(page,0).click(); await point(page,2).click();
+  await waitSaved(page,state=>state.usedDiceIndices?.includes(1));
+  await page.reload({waitUntil:'networkidle'}); await button(page,'Continue saved game').click();
+  assert.equal(await dice.count(),4);
+  assert.equal(await dice.nth(1).getAttribute('data-used'),'true');
+  assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="false"]').count(),3);
+});
+
+register('a selected die controls ambiguous bearing off without a higher die preference', async page => {
+  for(const roll of [[1,6],[6,1]]) for(const value of [1,6]) {
+    await loadFixture(page,makeSave({white:{23:2},black:{0:15},remainingDice:roll}));
+    await page.getByTestId('dice').locator('.game-die').nth(roll.indexOf(value)).click();
+    await point(page,23).click(); await page.locator('[data-bear-off-player="White"]').click();
+    const state=await waitSaved(page,state=>state.off.White===14);
+    assert.equal(state.moveLog.at(-1).move.die,value);
+    assert.deepEqual(state.remainingDice,[value===1?6:1]);
+    assert.equal(await page.getByTestId('bear-off-choice').count(),0);
+  }
+});
+
+register('previous five rolls stay small and dim and persist without being changed by undo', async page => {
+  const pairs=[[1,2],[3,4],[5,6],[2,2],[4,5],[6,4]];
+  const history=pairs.map((dice,index)=>({id:index+1,player:index%2?'White':'Black',dice,opening:index===0}));
+  const fixture=makeSave({white:{6:1,18:14},black:{23:15},version:4,remainingDice:[4],rolledDice:[6,4],usedDiceIndices:[0],rollHistory:history,turnMoveCount:1,
+    moveLog:[{id:1,player:'White',mode:'WAR',controlState:'NORMAL',controller:'White',move:{from:0,to:6,die:6,isHit:false},remainingDiceAfter:[4]}]});
+  await loadFixture(page,fixture);
+  const list=page.getByTestId('roll-history');
+  assert.equal(await list.locator('li').count(),5);
+  assert.match(await list.locator('li').first().getAttribute('aria-label'),/4 and 5/);
+  for(const doubles of [false,true]) {
+    await loadFixture(page,doubles ? makeSave({white:{1:1,18:14},black:{3:1,5:1,7:1},bar:{White:0,Black:1},version:4,mode:'PEACE',controlState:'ENEMY_CONTROL',controller:'Black',remainingDice:[2,2,2],rolledDice:[2,2,2,2],usedDiceIndices:[0],rollHistory:history.map((roll,index)=>index===5?{...roll,dice:[2,2]}:roll),turnMoveCount:1,moveLog:[{id:1,player:'White',mode:'PEACE',controlState:'ENEMY_CONTROL',controller:'Black',move:{from:-1,to:1,die:2,isHit:true,isBarEntry:true},remainingDiceAfter:[2,2,2]}]}) : fixture);
+  for(const viewport of [{width:1366,height:900},{width:1024,height:768},{width:912,height:590},{width:768,height:1024},{width:390,height:844}]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    if(viewport.width>=800) assert.ok(await page.locator('.game-console').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight+1),'Current dice, history and controls fit the landscape screen.');
+    const sizes=await page.evaluate(()=>({current:document.querySelector('.game-die').getBoundingClientRect().width,history:document.querySelector('.history-die').getBoundingClientRect().width}));
+    assert.ok(sizes.history<sizes.current/2);
+    if(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY) await page.screenshot({path:path.join(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY,`dice-history-${doubles?'doubles-':''}${viewport.width}x${viewport.height}.png`),fullPage:true});
+  }
+  }
+  await loadFixture(page,fixture);
+  await page.setViewportSize({width:1024,height:768});
+  await queueDice(page,[2,5]);
+  await point(page,6).click(); await point(page,10).click();
+  await button(page,'End turn').click();
+  const next=await waitSaved(page,state=>state.currentPlayer==='Black'&&state.remainingDice.length===2);
+  assert.deepEqual(next.rolledDice,[2,5]);
+  assert.equal(next.rollHistory.length,6);
+  assert.deepEqual(next.rollHistory.at(-1).dice,[2,5]);
+  assert.match(await list.locator('li').first().getAttribute('aria-label'),/6 and 4/);
+  await point(page,23).click(); await point(page,21).click();
+  await waitSaved(page,state=>state.usedDiceIndices.length===1);
+  await button(page,'Undo move').click();
+  const undone=await waitSaved(page,state=>state.usedDiceIndices.length===0);
+  assert.deepEqual(undone.rollHistory,next.rollHistory);
+  await page.reload({waitUntil:'networkidle'}); await button(page,'Continue saved game').click();
+  assert.equal(await list.locator('li').count(),5);
+  assert.match(await list.locator('li').first().getAttribute('aria-label'),/6 and 4/);
+});
+
+register('normal doubles are not rerolled after a blocked opening turn', async page => {
+  await loadFixture(page,makeSave({white:{18:14},black:{0:2,1:2,2:2,3:2,4:2,5:5},bar:{White:1,Black:0},remainingDice:[6,4],
+    gamePhase:'OPENING_TURN',openingDice:[6,4],openingWinner:'White'}));
+  await queueDice(page,[2,2,3,4]);
+  const next=await waitSaved(page,state=>state.currentPlayer==='Black'&&state.gamePhase==='NORMAL_TURN');
+  assert.deepEqual(next.rolledDice,[2,2,2,2],'The next pair is accepted, rather than replacing doubles.');
+  assert.equal(next.mode,'PEACE');
+});
+
+register('iPad messages and VENGEANCE survive captures and Test sound restores audio', async page => {
+  await page.setViewportSize({width:1024,height:768});
+  await page.addInitScript(()=>{
+    const Native=window.AudioContext||window.webkitAudioContext;
+    window.__ipadAudio=[];
+    if(!Native)return;
+    class Observed extends Native { constructor(...args){super(...args);window.__ipadAudio.push(this);} }
+    window.AudioContext=Observed;
+    if(window.webkitAudioContext)window.webkitAudioContext=Observed;
+  });
+  await loadFixture(page,makeSave({white:{4:14},black:{0:1,1:2,2:1},bar:{White:1,Black:0},remainingDice:[1,2],mode:'PEACE'}));
+  await page.getByTestId('game-narration').waitFor({state:'visible'});
+  assert.match(await page.getByTestId('game-narration').innerText(),/VENGEANCE — ALL MOVES/);
+  await point(page,0).tap();
+  await waitSaved(page,state=>state.bar.Black===1);
+  assert.match(await page.getByTestId('game-narration').innerText(),/VENGEANCE — ALL MOVES/,'The first capture does not erase the handoff banner.');
+  await button(page,'Messages on').tap();
+  assert.equal(await page.getByTestId('game-narration').count(),0);
+  await button(page,'Messages off').tap();
+  await page.getByTestId('game-narration').waitFor({state:'visible'});
+  await button(page,'Sound').tap();
+  await button(page,'Test sound').tap();
+  await page.waitForFunction(()=>localStorage.getItem('warPeaceBackgammonSoundEnabledV1')==='on'&&window.__ipadAudio.some(context=>context.state==='running'));
+  await button(page,'Play music').tap();
+  await page.evaluate(async()=>{await Promise.all(window.__ipadAudio.map(context=>context.close()));});
+  await button(page,'Close sound settings').tap();
+  await page.waitForFunction(()=>window.__ipadAudio.length>=2&&window.__ipadAudio.some(context=>context.state==='running'));
 });
 
 (async () => {

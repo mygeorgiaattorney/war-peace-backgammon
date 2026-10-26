@@ -4,6 +4,7 @@ import RulesDialog from "./components/RulesDialog";
 import { chooseStrategicMove, getLandmineProfile } from "./game/strategy";
 import GameNarration, { type NarrationEvent } from "./components/GameNarration";
 import SoundSettings from "./components/SoundSettings";
+import DicePanel, { type RollHistoryEntry } from "./components/DicePanel";
 import useTableFit from "./components/useTableFit";
 import { createMusicPlayer, type MusicMode } from "./game/music";
 import "./game.css";
@@ -95,6 +96,7 @@ type MoveLogEntry = {
 type Snapshot = {
   board: Point[];
   dice: number[];
+  usedDiceIndices: number[];
   bar: BarState;
   off: OffState;
   controller: Player;
@@ -106,7 +108,10 @@ type Snapshot = {
 };
 
 type SavedGameState = {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
+  rolledDice?: number[];
+  usedDiceIndices?: number[];
+  rollHistory?: RollHistoryEntry[];
   bearOffPriorityAtTurnStart?: boolean;
   playSetupMode?: Exclude<PlaySetupMode, "MENU">;
   computerStrategy?: AutoTestStrategy;
@@ -650,7 +655,8 @@ function removeDie(dice: number[], usedDie: number): number[] {
 }
 
 function uniqueDice(dice: number[]): number[] {
-  return Array.from(new Set(dice)).sort((a, b) => b - a);
+  // Visit every value without giving the higher or first die priority.
+  return Array.from(new Set(dice));
 }
 
 function getEntryPoint(player: Player, die: number): number {
@@ -998,8 +1004,28 @@ function savedTurnStartedAllHome(saved: SavedGameState): boolean {
   });
 }
 
+function savedDiceDisplay(saved: SavedGameState): { dice: number[]; used: number[] } {
+  if (saved.version === 4 && saved.rolledDice && saved.usedDiceIndices) {
+    return { dice: [...saved.rolledDice], used: [...saved.usedDiceIndices] };
+  }
+  const played = saved.turnMoveCount > 0 ? saved.moveLog.slice(-Math.min(4, saved.turnMoveCount)).map(entry => entry.move.die) : [];
+  const dice = saved.openingDice ? [...saved.openingDice] : [...played, ...saved.remainingDice].slice(0, 4);
+  const remaining = [...saved.remainingDice];
+  const used: number[] = [];
+  dice.forEach((value, index) => {
+    const match = remaining.indexOf(value);
+    if (match >= 0) remaining.splice(match, 1);
+    else if (!saved.awaitingModeChoice) used.push(index);
+  });
+  return { dice, used };
+}
+
 function rollDie(): number {
-  return Math.floor(Math.random() * 6) + 1;
+  // Reject the four excess values so each face has exactly the same number
+  // of possible 32-bit samples. Dice never depend on board state or score.
+  const sample = new Uint32Array(1);
+  do { globalThis.crypto.getRandomValues(sample); } while (sample[0] >= 4294967292);
+  return sample[0] % 6 + 1;
 }
 
 let sharedAudioContext: AudioContext | null = null;
@@ -1012,7 +1038,7 @@ function getAudioContext(): AudioContext | null {
     if (!sharedAudioContext || sharedAudioContext.state === "closed") {
       sharedAudioContext = new AudioContextClass();
     }
-    if (sharedAudioContext.state === "suspended") {
+    if (String(sharedAudioContext.state) !== "running") {
       void sharedAudioContext.resume().catch(() => {});
     }
     return sharedAudioContext;
@@ -1286,6 +1312,10 @@ export default function App() {
   const [storedControlState, setControlState] = useState<ControlState>("NORMAL");
   const [gamePhase, setGamePhase] = useState<GamePhase>("OPENING_ROLL");
   const [remainingDice, setRemainingDice] = useState<number[]>([]);
+  const [rolledDice, setRolledDice] = useState<number[]>([]);
+  const [usedDiceIndices, setUsedDiceIndices] = useState<number[]>([]);
+  const [selectedDieIndex, setSelectedDieIndex] = useState<number | null>(null);
+  const [rollHistory, setRollHistory] = useState<RollHistoryEntry[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
   const [pendingBearOffMoves, setPendingBearOffMoves] = useState<Move[]>([]);
   const [draggingPoint, setDraggingPoint] = useState<number | null>(null);
@@ -1443,6 +1473,8 @@ export default function App() {
   );
 
   const legalMoves = legalAnalysis.legalMoves;
+  const humanMoves = useMemo(() => selectedDieIndex === null ? legalMoves : legalMoves.filter(move => move.die === rolledDice[selectedDieIndex]),
+    [legalMoves, selectedDieIndex, rolledDice]);
   const controlState = legalAnalysis.controlState;
   const controller = controlState === "ENEMY_CONTROL" ? opponent(currentPlayer) : storedController;
   const computerLandmineProfile = useMemo(() => getLandmineProfile({ board, bar, off }, "Black"), [board, bar, off]);
@@ -1450,12 +1482,12 @@ export default function App() {
     () =>
       Array.from(
         new Set(
-          legalMoves
+          humanMoves
             .filter((move) => !move.isBarEntry)
             .map((move) => move.from)
         )
       ),
-    [legalMoves]
+    [humanMoves]
   );
   const turnGuidance = useMemo(() => {
     if (winner !== null || awaitingModeChoice || remainingDice.length === 0) return null;
@@ -1477,7 +1509,7 @@ export default function App() {
       })
     : [];
 
-  const displayDice = awaitingModeChoice ? openingDice ?? [] : remainingDice;
+  const displayDice = awaitingModeChoice ? openingDice ?? [] : rolledDice;
   const cleanWhitePlayerName = normalizePlayerName(whitePlayerName);
   const cleanBlackPlayerName = normalizePlayerName(blackPlayerName);
   const playersReady =
@@ -1551,9 +1583,12 @@ export default function App() {
       return;
     }
     const key = `${gameRolls}:${currentPlayer}:${gamePhase}`;
-    if (controlAnnouncementRef.current === key) return;
+    const detail = `${controller} (opponent) makes ALL moves with ${currentPlayer}’s checkers and all playable dice. At least one capture is unavoidable. Choose the minimum or additional captures where legal. No extra roll.`;
+    if (controlAnnouncementRef.current === key) {
+      if (narrationEnabled) narrate({kind:"vengeance", title:"VENGEANCE — ALL MOVES", detail, player:controller});
+      return;
+    }
     controlAnnouncementRef.current = key;
-    const detail = `${controller} (the opponent) makes ALL moves with ${currentPlayer}’s checkers and all playable dice. At least one capture is unavoidable. Choose the minimum or additional captures where legal. No extra roll.`;
     narrate({kind:"vengeance", title:"VENGEANCE — ALL MOVES", detail, player:controller});
     if (soundEnabled && !autoTestRunning) playVengeanceSound();
     if (autoTestRunning) {
@@ -1562,7 +1597,7 @@ export default function App() {
       else autoTestGameBlackGainedEnemyControlRef.current += 1;
       if (calculatePipCount(board, controller, bar) - calculatePipCount(board, currentPlayer, bar) >= 30) autoTestGameEnemyControlWhileTrailing30Ref.current += 1;
     }
-  }, [setupComplete, vengeanceActive, awaitingModeChoice, diceRolling, gameRolls, currentPlayer, gamePhase, controller, soundEnabled, autoTestRunning]);
+  }, [setupComplete, vengeanceActive, awaitingModeChoice, diceRolling, gameRolls, currentPlayer, gamePhase, controller, soundEnabled, narrationEnabled, autoTestRunning]);
 
   function resumeAudio(): void {
     if (soundEnabled) getAudioContext();
@@ -1590,6 +1625,7 @@ export default function App() {
     setDraggingPoint(null);
     setDragPosition(null);
     setPendingBearOffMoves([]);
+    setSelectedDieIndex(null);
     setTurnBanner(null);
     setNarration(null);
     if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
@@ -1663,7 +1699,7 @@ export default function App() {
     setTimeout(() => setAnimatingMoveKey(null), 420);
   }
 
-  function flashBanner(text: string, duration = 1300): void {
+  function flashBanner(text: string, duration = 2200): void {
     if (!narrationEnabled) return;
     if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
     setTurnBanner(text);
@@ -1676,6 +1712,8 @@ export default function App() {
 
   function narrate(event: Omit<NarrationEvent, "id">): void {
     if (!narrationEnabled || autoTestRunning) return;
+    // A quick computer capture must not replace the handoff before it can be read.
+    if (narration?.kind === "vengeance" && event.kind !== "vengeance" && vengeanceActive) return;
     if (narrationTimerRef.current !== null) clearTimeout(narrationTimerRef.current);
     setTurnBanner(null);
     if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
@@ -1716,7 +1754,10 @@ export default function App() {
   function saveGame(announce = true): void {
     if (!setupComplete || winner || autoTestRunning || diagnosticGameRef.current) return;
     const savedGame: SavedGameState = {
-      version: 3,
+      version: 4,
+      rolledDice: [...rolledDice],
+      usedDiceIndices: [...usedDiceIndices],
+      rollHistory: rollHistory.map(roll => ({ ...roll, dice: [...roll.dice] as [number, number] })),
       bearOffPriorityAtTurnStart,
       playSetupMode,
       computerStrategy,
@@ -1758,7 +1799,7 @@ export default function App() {
       setSaveAvailable(true);
       if (announce) {
         setMessage("Progress saved on this device.");
-        flashBanner("GAME SAVED", 900);
+        flashBanner("GAME SAVED", 1800);
       }
     } catch {
       setSaveAvailable(false);
@@ -1773,13 +1814,25 @@ export default function App() {
   }, [board, bar, off, mode, currentPlayer, controller, controlState, gamePhase, remainingDice,
     moveLog, turnMoveCount, bearOffPriorityAtTurnStart, openingDice, openingWinner, awaitingModeChoice, winner, diceRolling,
     autoTestRunning, playSetupMode, computerStrategy, whitePlayerName, blackPlayerName,
-    gameRolls, gamePlayableRolls, gameUnplayableRolls]);
+    gameRolls, gamePlayableRolls, gameUnplayableRolls, rolledDice, usedDiceIndices, rollHistory]);
 
   function isSavedGameState(value: unknown): value is SavedGameState {
     if (!value || typeof value !== "object") return false;
     const candidate = value as Partial<SavedGameState>;
     const isPlayer = (player: unknown): player is Player => player === "White" || player === "Black";
     const isDie = (die: unknown): die is number => typeof die === "number" && Number.isInteger(die) && die >= 1 && die <= 6;
+    if (candidate.version === 4) {
+      if (!Array.isArray(candidate.rolledDice) || candidate.rolledDice.length > 4 || !candidate.rolledDice.every(isDie) ||
+          !Array.isArray(candidate.usedDiceIndices) || new Set(candidate.usedDiceIndices).size !== candidate.usedDiceIndices.length ||
+          !candidate.usedDiceIndices.every(index => Number.isInteger(index) && index >= 0 && index < candidate.rolledDice!.length) ||
+          !Array.isArray(candidate.rollHistory) || candidate.rollHistory.length > 6 ||
+          !candidate.rollHistory.every(roll => roll && Number.isInteger(roll.id) && roll.id > 0 &&
+            isPlayer(roll.player) && typeof roll.opening === "boolean" && Array.isArray(roll.dice) && roll.dice.length === 2 && roll.dice.every(isDie))) return false;
+      if (candidate.gamePhase === "NORMAL_TURN" || candidate.gamePhase === "OPENING_TURN") {
+        const available = candidate.rolledDice.filter((_, index) => !candidate.usedDiceIndices!.includes(index)).sort();
+        if (!Array.isArray(candidate.remainingDice) || available.join() !== [...candidate.remainingDice].sort().join()) return false;
+      }
+    }
     const validOpening = Array.isArray(candidate.openingDice) && candidate.openingDice.length === 2 &&
       candidate.openingDice.every(isDie) && candidate.openingDice[0] !== candidate.openingDice[1];
     if ((candidate.whitePlayerName !== undefined && typeof candidate.whitePlayerName !== "string") ||
@@ -1804,7 +1857,7 @@ export default function App() {
       !["BEAR_OFF", "RESIGNATION"].includes(candidate.finalResult.reason)
     )) return false;
     return (
-      (candidate.version === 1 || candidate.version === 2 || candidate.version === 3) &&
+      (candidate.version === 1 || candidate.version === 2 || candidate.version === 3 || candidate.version === 4) &&
       Array.isArray(candidate.board) &&
       candidate.board.length === 24 &&
       candidate.board.every((point) => point && Number.isInteger(point.count) && point.count >= 0 && point.count <= 15 &&
@@ -1865,6 +1918,12 @@ export default function App() {
       setControlState(parsed.controlState);
       setGamePhase(parsed.gamePhase);
       setRemainingDice([...parsed.remainingDice]);
+      const display = savedDiceDisplay(parsed);
+      setRolledDice(display.dice);
+      setUsedDiceIndices(display.used);
+      setSelectedDieIndex(null);
+      setRollHistory(parsed.rollHistory ?? (display.dice.length > 0 ? [{ id: 1, player: parsed.currentPlayer,
+        dice: display.dice.slice(0, 2) as [number, number], opening: parsed.openingDice !== null }].filter(roll => roll.dice.length === 2) : []));
       setSelectedPoint(null);
       setDraggingPoint(null);
       setHoverPoint(null);
@@ -1896,7 +1955,7 @@ export default function App() {
       setLegalHelpActive(false);
       setAssistSourcePoint(null);
       setHasSavedGame(true);
-      flashBanner("GAME LOADED", 900);
+      flashBanner("GAME LOADED", 1800);
     } catch {
       removeStoredValue(SAVE_KEY);
       setHasSavedGame(false);
@@ -2097,6 +2156,10 @@ export default function App() {
     setControlState("NORMAL");
     setGamePhase("OPENING_ROLL");
     setRemainingDice([]);
+    setRolledDice([]);
+    setUsedDiceIndices([]);
+    setSelectedDieIndex(null);
+    setRollHistory([]);
     setSelectedPoint(null);
     setDraggingPoint(null);
     setHoverPoint(null);
@@ -2179,6 +2242,10 @@ export default function App() {
     setTurnMoveCount(0);
     setBearOffPriorityAtTurnStart(false);
     setOpeningDice([whiteDie, blackDie]);
+    setRolledDice([whiteDie, blackDie]);
+    setUsedDiceIndices([]);
+    setSelectedDieIndex(null);
+    setRollHistory([{ id: 1, player: winner, dice: [whiteDie, blackDie], opening: true }]);
     setOpeningWinner(winner);
     setAwaitingModeChoice(true);
     setGamePhase("MODE_CHOICE");
@@ -2206,6 +2273,7 @@ export default function App() {
     setController("White");
     setControlState("NORMAL");
     setRemainingDice([2, 6]);
+    setRolledDice([2, 6]); setUsedDiceIndices([]); setSelectedDieIndex(null); setRollHistory([]);
     setSelectedPoint(null);
     setPreviewMoveKey(null);
     setLastMove(null);
@@ -2240,6 +2308,7 @@ export default function App() {
     setController("White");
     setControlState("NORMAL");
     setRemainingDice([1, 4]);
+    setRolledDice([1, 4]); setUsedDiceIndices([]); setSelectedDieIndex(null); setRollHistory([]);
     setSelectedPoint(null);
     setPreviewMoveKey(null);
     setLastMove(null);
@@ -2277,6 +2346,7 @@ export default function App() {
     setController(openingWinner);
     setControlState("NORMAL");
     setRemainingDice(openingDice);
+    setRolledDice([...openingDice]); setUsedDiceIndices([]); setSelectedDieIndex(null);
     setBearOffPriorityAtTurnStart(openingAllHome);
     setAwaitingModeChoice(false);
     setGamePhase("OPENING_TURN");
@@ -2298,18 +2368,8 @@ export default function App() {
 
     const nextPlayer = opponent(currentPlayer);
     const nextTurnAllHome = allHome(board, nextPlayer, bar);
-    let d1 = rollDie();
-    let d2 = rollDie();
-
-    // Safety guard: the first playable turn must use the original non-double opening dice.
-    // If the first transition somehow reaches a new roll before any move is logged,
-    // do not allow that first playable roll to become doubles.
-    if (openingDice !== null && moveLog.length === 0) {
-      while (d1 === d2) {
-        d1 = rollDie();
-        d2 = rollDie();
-      }
-    }
+    const d1 = rollDie();
+    const d2 = rollDie();
 
     const rolledDoubles = d1 === d2;
     const dice = rolledDoubles ? [d1, d1, d1, d1] : [d1, d2];
@@ -2341,6 +2401,11 @@ export default function App() {
     setController(nextPlayer);
     setControlState("NORMAL");
     setRemainingDice(dice);
+    setRolledDice([...dice]);
+    setUsedDiceIndices([]);
+    setSelectedDieIndex(null);
+    setRollHistory(previous => [...previous, { id: (previous.at(-1)?.id ?? 0) + 1,
+      player: nextPlayer, dice: [d1, d2] as [number, number], opening: false }].slice(-6));
     setBearOffPriorityAtTurnStart(nextTurnAllHome);
     setOpeningDice(null);
     setOpeningWinner(null);
@@ -2370,6 +2435,8 @@ export default function App() {
     const previous = history[history.length - 1];
     setBoard(previous.board);
     setRemainingDice(previous.dice);
+    setUsedDiceIndices(previous.usedDiceIndices);
+    setSelectedDieIndex(null);
     setBar(previous.bar);
     setOff(previous.off);
     setController(previous.controller);
@@ -2436,6 +2503,7 @@ export default function App() {
       {
         board: cloneBoard(board),
         dice: [...remainingDice],
+        usedDiceIndices: [...usedDiceIndices],
         bar: { ...bar },
         off: { ...off },
         controller,
@@ -2469,6 +2537,10 @@ export default function App() {
 
     const result = applyMove(board, move, currentPlayer, bar, off);
     const nextDice = removeDie(remainingDice, move.die);
+    const usedIndex = selectedDieIndex !== null && !usedDiceIndices.includes(selectedDieIndex) && rolledDice[selectedDieIndex] === move.die
+      ? selectedDieIndex : rolledDice.findIndex((value, index) => value === move.die && !usedDiceIndices.includes(index));
+    if (usedIndex >= 0) setUsedDiceIndices(previous => [...previous, usedIndex]);
+    setSelectedDieIndex(null);
     const nextControlState = controlState;
     const nextController = controller;
 
@@ -2995,7 +3067,7 @@ export default function App() {
 
   function beginDrag(index: number, event?: React.PointerEvent<HTMLDivElement>): void {
     if (!event || !setupComplete || winner || diceRolling || confirmResign || isComputerController || autoTestRunning || awaitingModeChoice || bar[currentPlayer] > 0) return;
-    if (board[index].owner !== currentPlayer || !legalMoves.some((move) => move.from === index)) return;
+    if (board[index].owner !== currentPlayer || !humanMoves.some((move) => move.from === index)) return;
     setPendingBearOffMoves([]);
     pendingDragRef.current = { point: index, x: event.clientX, y: event.clientY };
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -3010,7 +3082,7 @@ export default function App() {
     const tray = element?.closest("[data-bear-off-player]") as HTMLElement | null;
     const point = element?.closest("[data-point-index]") as HTMLElement | null;
     const dropIndex = point?.dataset.pointIndex === undefined ? null : Number(point.dataset.pointIndex);
-    const moves = legalMoves.filter((candidate) => candidate.from === draggingPoint && (
+    const moves = humanMoves.filter((candidate) => candidate.from === draggingPoint && (
       candidate.isBearOff ? tray?.dataset.bearOffPlayer === currentPlayer : candidate.to === dropIndex
     ));
     const source = draggingPoint;
@@ -3092,7 +3164,7 @@ export default function App() {
       window.removeEventListener("pointerup", handleWindowPointerUp);
       window.removeEventListener("keydown", handleWindowKeyDown);
     };
-  }, [draggingPoint, legalMoves]);
+  }, [draggingPoint, humanMoves]);
 
   useEffect(() => {
     if (autoPassTimerRef.current !== null) {
@@ -3246,7 +3318,7 @@ export default function App() {
     }
 
     if (bar[currentPlayer] > 0) {
-      const barMove = legalMoves.find((move) => move.isBarEntry && move.to === index);
+      const barMove = humanMoves.find((move) => move.isBarEntry && move.to === index);
       if (!barMove) {
         showLegalMoveHelp(null);
         setMessage("Bar entry required.");
@@ -3258,7 +3330,7 @@ export default function App() {
 
     if (selectedPoint === null) {
       const point = board[index];
-      const hasLegalMoveFromPoint = legalMoves.some((move) => !move.isBarEntry && move.from === index);
+      const hasLegalMoveFromPoint = humanMoves.some((move) => !move.isBarEntry && move.from === index);
 
       if (point.owner !== currentPlayer || !hasLegalMoveFromPoint) {
         showLegalMoveHelp(null);
@@ -3275,13 +3347,13 @@ export default function App() {
       return;
     }
 
-    const moves = legalMoves.filter((candidate) => {
+    const moves = humanMoves.filter((candidate) => {
       if (candidate.isBearOff) return candidate.from === selectedPoint && index === selectedPoint;
       return candidate.from === selectedPoint && candidate.to === index;
     });
 
     if (moves.length === 0) {
-      if (board[index].owner === currentPlayer && legalMoves.some((candidate) => candidate.from === index)) {
+      if (board[index].owner === currentPlayer && humanMoves.some((candidate) => candidate.from === index)) {
         setSelectedPoint(index === selectedPoint ? null : index);
         setAssistSourcePoint(null);
         return;
@@ -3297,7 +3369,7 @@ export default function App() {
 
   function chooseHumanMove(moves: Move[]): void {
     if (isComputerController || diceRolling || confirmResign || autoTestRunning || !setupComplete || winner !== null) return;
-    const candidates = moves.filter((move) => legalMoves.some((legal) => moveKey(legal) === moveKey(move)));
+    const candidates = moves.filter((move) => humanMoves.some((legal) => moveKey(legal) === moveKey(move)));
     if (candidates.length === 0) { setPendingBearOffMoves([]); return; }
     if (candidates.length > 1 && candidates.every((move) => move.isBearOff)) {
       const options = [...new Map(candidates.map((move) => [move.die, move])).values()].sort((a, b) => a.die - b.die);
@@ -3318,7 +3390,7 @@ export default function App() {
 
     const bearOffMoves = selectedPoint === null
       ? []
-      : legalMoves.filter((move) => move.isBearOff && move.from === selectedPoint);
+      : humanMoves.filter((move) => move.isBearOff && move.from === selectedPoint);
 
     if (bearOffMoves.length === 0) {
       showLegalMoveHelp(selectedPoint);
@@ -3343,15 +3415,6 @@ export default function App() {
   }
 
 
-  function renderDie(value: number, index: number) {
-    const spots: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-    return (
-      <div key={index} className={"game-die " + (getDieOwnerForDisplay(value, index) === "White" ? "die-light" : "die-dark")} aria-label={"Die " + value}>
-        {Array.from({ length: 9 }, (_, spot) => <span key={spot} className={spots[value].includes(spot) ? "die-pip" : ""} />)}
-      </div>
-    );
-  }
-
   function moveDestinationColor(point: Point, player: Player): string {
     if (point.owner !== null && point.owner !== player && point.count === 1) {
       return "radial-gradient(circle, #ff5a4d 0%, #7a0000 75%)";
@@ -3368,7 +3431,7 @@ export default function App() {
     const isSelected = canShowMoves && source === index;
     const isOrigin = canShowMoves && legalOriginPoints.includes(index);
     const isRequiredOrigin = isOrigin && legalOriginPoints.length === 1;
-    const destination = canShowMoves && legalMoves.find((move) =>
+    const destination = canShowMoves && humanMoves.find((move) =>
       bar[currentPlayer] > 0 ? move.isBarEntry && move.to === index :
       source !== null && move.from === source && !move.isBearOff && move.to === index
     );
@@ -3411,7 +3474,7 @@ export default function App() {
   }
 
   function renderBar(player: Player) {
-    const required = setupComplete && humanCanAct && !winner && !awaitingModeChoice && currentPlayer === player && legalMoves.some((move) => move.isBarEntry);
+    const required = setupComplete && humanCanAct && !winner && !awaitingModeChoice && currentPlayer === player && humanMoves.some((move) => move.isBarEntry);
     const wasOrigin = Boolean(lastMove?.isBarEntry && moveLog[moveLog.length - 1]?.player === player);
     return <button type="button" className={"board-bar " + (bar[player] > 0 ? "bar-occupied" : "") + (required ? " bar-required" : "") + (wasOrigin ? " bar-last-origin" : "")}
       data-legal-origin={required} data-last-origin={wasOrigin}
@@ -3428,7 +3491,7 @@ export default function App() {
 
   function renderOffTray(player: Player) {
     const source = draggingPoint ?? selectedPoint ?? assistSourcePoint;
-    const available = player === currentPlayer && setupComplete && humanCanAct && !winner && source !== null && legalMoves.some((move) => move.isBearOff && move.from === source);
+    const available = player === currentPlayer && setupComplete && humanCanAct && !winner && source !== null && humanMoves.some((move) => move.isBearOff && move.from === source);
     const wasDestination = Boolean(lastMove?.isBearOff && moveLog[moveLog.length - 1]?.player === player);
     return <button type="button" data-bear-off-player={player}
       data-legal-destination={available} data-last-destination={wasDestination}
@@ -3601,16 +3664,17 @@ export default function App() {
   const humanCanAct = !isComputerController && !autoTestRunning && !diceRolling && !confirmResign;
   const canChooseHere = canChooseDoctrine && humanCanAct;
   const statusText = winner && finalResult ? formatFinalResult(finalResult) :
-    diceRolling ? "Rolling dice…" : vengeanceActive ? `ALL MOVES: ${controller} (opponent). ${remainingDice.length === 0 || legalMoves.length === 0 ? "Roll complete — end turn." : "At least one capture; extra captures optional."}` : isComputerController ? "Computer is thinking…" :
+    diceRolling ? "Rolling dice…" : vengeanceActive ? `${controller}: ALL MOVES. ${remainingDice.length === 0 || legalMoves.length === 0 ? "Roll complete — end turn." : "At least one capture; extras optional."}` : isComputerController ? "Computer is thinking…" :
     canChooseHere ? "You won the opening roll. Choose WAR or PEACE." : message;
 
   return (
     <main ref={tableFit.appRef} className={"game-app theme-" + (enemyControl ? "vengeance vengeance-sweep" : modeIsWar ? "war" : "peace")}
       data-music-mode={musicMode} onDragStart={(event) => event.preventDefault()}
-      onPointerDownCapture={resumeAudio} onKeyDownCapture={resumeAudio}>
+      onPointerDownCapture={resumeAudio} onTouchEndCapture={resumeAudio} onClickCapture={resumeAudio} onKeyDownCapture={resumeAudio}>
       <RulesDialog open={showRules} onClose={() => setShowRules(false)} />
       <SoundSettings open={showSoundSettings} onClose={() => setShowSoundSettings(false)} soundEnabled={soundEnabled}
         onSoundToggle={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) playSoundTest(); }}
+        onSoundTest={() => { setSoundEnabled(true); playSoundTest(); }}
         narrationEnabled={narrationEnabled} onNarrationToggle={() => setNarrationEnabled(value => !value)}
         musicEnabled={musicEnabled} onMusicToggle={toggleMusic} volume={musicVolume} onVolumeChange={setMusicVolume} />
       {!setupComplete ? <GameIntro
@@ -3640,7 +3704,7 @@ export default function App() {
               title="Show or hide game pop-up messages" onClick={() => setNarrationEnabled(value => !value)}>
               Messages {narrationEnabled ? "on" : "off"}
             </button>
-            <button type="button" onClick={() => setShowSoundSettings(true)}>Sound</button>
+            <button type="button" aria-label="Sound" onClick={() => setShowSoundSettings(true)}>Sound <span aria-hidden="true">{soundEnabled ? "on" : "off"}</span></button>
             <button type="button" onClick={backToGameMenu}>Menu</button>
           </nav>
         </header>
@@ -3686,12 +3750,15 @@ export default function App() {
           </div>
 
           <aside className="game-console" aria-label="Game controls">
-            <div className={"dice-panel" + (displayDice.length > 2 ? " has-doubles" : "")}>
-              <span className="console-label">{awaitingModeChoice ? "OPENING ROLL" : "DICE REMAINING"}</span>
-              <div className={"dice-row " + (diceRolling ? "dice-rolling" : "")} data-testid="dice">
-                {displayDice.length ? displayDice.map(renderDie) : <><span className="die-empty">·</span><span className="die-empty">·</span></>}
-              </div>
-            </div>
+            <DicePanel dice={displayDice} used={usedDiceIndices} selected={selectedDieIndex}
+              selectable={humanCanAct && turnIsPlayable && !awaitingModeChoice && !winner}
+              playableValues={legalMoves.map(move => move.die)} rolling={diceRolling} opening={awaitingModeChoice}
+              history={rollHistory} owner={getDieOwnerForDisplay}
+              onSelect={index => {
+                setSelectedDieIndex(previous => previous === index ? null : index);
+                setPendingBearOffMoves([]); setSelectedPoint(null); setAssistSourcePoint(null); setPreviewMoveKey(null);
+                setMessage(selectedDieIndex === index ? "Either die may be used first. Choose a checker and destination." : `Use the ${rolledDice[index]}. Tap that die again to show moves for either die.`);
+              }} />
             <div className="main-actions">
               {gamePhase === "OPENING_ROLL" && <button className="primary-action" type="button" disabled={!canRollOpening || autoTestRunning} onClick={rollOpening}>Roll opening dice</button>}
               {canChooseHere && <div className="mode-choices"><button type="button" className="choose-war" onClick={() => chooseMode("WAR")}>Choose WAR</button><button type="button" className="choose-peace" onClick={() => chooseMode("PEACE")}>Choose PEACE</button></div>}
@@ -3730,7 +3797,7 @@ export default function App() {
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
         </details>
-        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.4.1</span></footer>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.5.0</span></footer>
         </div>
 
         {showRecords && <section className="records-panel">

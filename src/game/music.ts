@@ -76,7 +76,7 @@ export function createMusicPlayer(getContext: () => AudioContext | null) {
   }
 
   function schedule() {
-    if (!context || !timer || document.hidden) return;
+    if (!context || !timer || document.hidden || String(context.state) !== 'running') return;
     // A throttled/background tab must not queue a backlog of old notes.
     if (next < context.currentTime) next = context.currentTime + .03;
     while (next < context.currentTime + .3) next += compose(next);
@@ -96,8 +96,10 @@ export function createMusicPlayer(getContext: () => AudioContext | null) {
 
   function start(nextMode: MusicMode, value: number) {
     if (document.hidden) return;
-    context = getContext();
-    if (!context) return;
+    const nextContext = getContext();
+    if (!nextContext) return;
+    if (context && context !== nextContext) { stop(); bus = null; }
+    context = nextContext;
     if (!bus) {
       bus = context.createGain();
       const limiter = context.createDynamicsCompressor();
