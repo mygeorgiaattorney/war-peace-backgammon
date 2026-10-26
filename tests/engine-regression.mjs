@@ -144,12 +144,61 @@ test('PEACE chooses a complete no-hit turn when one is possible', () => {
   assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2 && sequence.totalHits === 0));
 });
 
-test('PEACE minimizes unavoidable captures across the complete maximum-length turn', () => {
+test('an unavoidable PEACE capture gives the opponent every move and a choice of one or two captures', () => {
   const state = position({ 0: 1 }, { 1: 1, 3: 1 });
   const result = analyze(state, 'White', [1, 2], 'PEACE');
-  assert.deepEqual(moveValues(result.legalMoves), ['0>2:2']);
-  assert.ok(result.legalSequences.every(sequence => sequence.totalHits === 1));
-  assert.ok(result.legalSequences.every(sequence => sequence.moves[1].isHit));
+  assert.equal(result.controlState, 'ENEMY_CONTROL');
+  assert.equal(result.controller, 'Black');
+  assert.deepEqual(moveValues(result.legalMoves), ['0>1:1','0>2:2']);
+  assert.deepEqual([...new Set(Array.from(result.legalSequences,s=>s.totalHits))].sort(),[1,2]);
+  assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2));
+});
+
+test('a quiet move preceding an unavoidable capture already belongs to the opponent', () => {
+  const state=position({0:1},{2:1});
+  const result=analyze(state,'White',[1,1],'PEACE');
+  assert.equal(result.controller,'Black');
+  assert.equal(result.controlState,'ENEMY_CONTROL');
+  assert.equal(result.legalMoves[0].isHit,false);
+  assert.ok(result.legalSequences.every(s=>s.moves.length===2 && s.totalHits===1));
+});
+
+test('when both dice must capture, the opponent cannot choose fewer captures or a partial turn',()=>{
+  const state=position({},{0:1,1:1,2:1},{White:1,Black:0});
+  const result=analyze(state,'White',[1,2],'PEACE');
+  assert.equal(result.controller,'Black');
+  assert.ok(result.legalSequences.every(s=>s.moves.length===2&&s.totalHits===2));
+});
+
+test('VENGEANCE doubles give the opponent choices of one two three or four captures, never zero',()=>{
+  const state=position({18:14},{0:1,1:1,2:1,3:1},{White:1,Black:0});
+  const result=analyze(state,'White',[1,1,1,1],'PEACE');
+  assert.equal(result.controller,'Black');
+  assert.ok(result.legalSequences.every(s=>s.moves.length===4 && s.totalHits>=1));
+  assert.deepEqual([...new Set(Array.from(result.legalSequences,s=>s.totalHits))].sort(),[1,2,3,4]);
+  const choices=position({0:1,18:14},{1:1,2:1,3:1,4:1});
+  // A quiet complete alternative prevents VENGEANCE, even with four captures available.
+  const peaceful=analyze(choices,'White',[1,1,1,1],'PEACE');
+  assert.equal(peaceful.controlState,'NORMAL');
+  assert.ok(peaceful.legalSequences.every(s=>s.totalHits===0));
+});
+
+test('a capture on the only usable die gives that entire playable move to the opponent',()=>{
+  const state=position({0:1},{1:1,2:2,3:2});
+  const result=analyze(state,'White',[1,2],'PEACE');
+  assert.equal(result.controller,'Black');
+  assert.ok(result.legalSequences.every(s=>s.moves.length===1 && s.totalHits===1));
+});
+
+test('blocked turns and partial capture alternatives do not spuriously trigger VENGEANCE',()=>{
+  const state=position({0:1,5:1},{2:2,6:1,7:2,8:2});
+  assert.ok(getRawMoves(state.board,'White',[1,2],state.bar,state.off).some(m=>m.isHit));
+  const result=analyze(state,'White',[1,2],'PEACE');
+  assert.equal(result.controlState,'NORMAL');
+  assert.ok(result.legalSequences.every(s=>s.moves.length===2 && s.totalHits===0));
+  const blocked=position({10:14},{0:2,1:2},{White:1,Black:0});
+  assert.equal(analyze(blocked,'White',[1,2],'PEACE').legalMoves.length,0);
+  assert.equal(analyze(blocked,'White',[1,2],'PEACE').controlState,'NORMAL');
 });
 
 test('a forced PEACE bar capture stays legal, and Enemy Control permits additional captures', () => {

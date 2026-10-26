@@ -433,7 +433,7 @@ register('optional narration distinguishes WAR and PEACE captures and persists i
   await point(page, 0).click();
   await page.getByTestId('game-narration').waitFor({ state: 'visible' });
   assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
-  assert.match(await page.getByTestId('game-narration').innerText(), /Black takes Enemy Control/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /Black \(opponent\).*ALL moves/s);
   await soundSettings(page, async () => assert.equal(await button(page, 'Sound off').isVisible(), true, 'Narration does not enable sound.'));
 });
 
@@ -501,41 +501,43 @@ register('VENGEANCE changes the whole table and leaves ownership with the moving
   await waitSaved(page, s => s.controlState === 'ENEMY_CONTROL' && s.remainingDice[0] === 2);
   assert.equal(await page.locator('.theme-vengeance').count(), 1);
   assert.match(await page.getByTestId('mode').innerText(), /VENGEANCE/);
-  assert.match(await page.getByTestId('turn').innerText(), /Black commands.*White’s checkers/s);
+  assert.match(await page.getByTestId('turn').innerText(), /BLACK MAKES ALL MOVES.*White’s checkers/s);
   assert.equal(await point(page, 0).locator('.checker-light').count(), 1);
-  assert.match(await page.getByTestId('game-narration').innerText(), /THE VICTIM TAKES COMMAND/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of Peace/);
   await button(page, 'Dismiss game narration').click();
   await point(page, 4).click();
   await point(page, 6).click();
   const result = await waitSaved(page, s => s.remainingDice.length === 0);
   assert.equal(result.board[6].owner, 'White');
   assert.equal(result.controller, 'Black');
-  assert.equal(await page.locator('.theme-vengeance').count(), 0, 'No useful borrowed moves remain.');
+  assert.equal(await page.locator('.theme-vengeance').count(), 1, 'The opponent owns the entire turn until it ends.');
 });
 
-register('a last-die PEACE capture creates a prisoner without a false VENGEANCE handoff', async page => {
+register('a forced final-die PEACE capture belongs to the opponent before that move', async page => {
   await loadFixture(page, makeSave({ white: { 2: 1, 4: 2, 18: 4, 20: 4, 22: 4 }, black: { 3: 1, 5: 14 }, currentPlayer:'Black',controller:'Black',remainingDice: [1], mode: 'PEACE' }));
+  assert.equal((await saved(page)).controller,'White');
+  assert.match(await page.getByTestId('turn').innerText(),/WHITE MAKES ALL MOVES/);
   await point(page, 3).click(); await point(page, 2).click();
   await waitSaved(page, s => s.bar.White === 1 && s.remainingDice.length === 0);
-  assert.equal(await page.locator('.theme-vengeance').count(), 0);
-  assert.match(await page.getByTestId('mode').innerText(), /PEACE/);
-  assert.match(await page.getByTestId('game-narration').innerText(), /No playable moves remain/);
+  assert.equal(await page.locator('.theme-vengeance').count(), 1);
+  assert.match(await page.getByTestId('mode').innerText(), /VENGEANCE/);
+  assert.match(await page.getByTestId('game-narration').innerText(), /ALL moves/);
 });
 
-register('illustrated rules show the capture before the victim commands the remaining moves', async page => {
+register('illustrated rules assign all moves before an unavoidable PEACE capture', async page => {
   await chooseTwoPlayers(page);
   await button(page, 'How to play').click();
   await page.getByRole('tab', {name:'Watch the rules'}).click();
   const examples=page.locator('.rule-examples');
   await examples.getByRole('button',{name:'VENGEANCE',exact:true}).click();
-  assert.match(await examples.innerText(), /Black cannot avoid this capture/);
-  await examples.getByRole('button',{name:'Play the forced capture',exact:true}).click();
-  assert.match(await examples.innerText(), /White takes control/);
+  assert.match(await examples.innerText(), /White commands BEFORE the first move/);
+  await examples.getByRole('button',{name:'White chooses the bar capture',exact:true}).click();
+  assert.match(await examples.innerText(), /White chose Black/);
   assert.match(await examples.locator('.example-caption').innerText(), /White commands Black/);
   await examples.getByRole('button',{name:'When the capture uses the last die',exact:true}).click();
   await examples.getByRole('button',{name:'Use the quiet 2',exact:true}).click();
   await examples.getByRole('button',{name:'Capture with the last 1',exact:true}).click();
-  assert.match(await examples.innerText(), /no borrowed|no dice|no remaining|no unused|no takeover|no useful/i);
+  assert.match(await examples.innerText(), /White chose the entire roll/i);
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('dialog').count(), 0);
 });
@@ -557,7 +559,7 @@ register('tablet rotation keeps the board and controls visible without overlappi
     assert.ok(Math.abs(layout.ratio-4/3)<.01);
     assert.equal(layout.overlap,false);
     assert.equal(layout.overflow,false);
-    if(viewport.width>=768)assert.ok(layout.controlsBottom<=viewport.height,JSON.stringify({viewport,layout}));
+    if(viewport.width>=768)assert.ok(layout.controlsBottom<=viewport.height+1,JSON.stringify({viewport,layout}));
     if(viewport.width>=800&&viewport.width/viewport.height>=1.2){
       assert.ok(layout.appWidth>=viewport.width*.85,JSON.stringify({viewport,layout}));
       assert.ok(layout.boardWidth>=viewport.width*.68,JSON.stringify({viewport,layout}));
@@ -601,13 +603,116 @@ register('music is opt-in, survives closing settings, and follows WAR PEACE and 
   assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'off');
   await soundSettings(page,async()=>{await button(page,'Play music').click();});
   assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'on');
-  assert.equal(await page.locator('main').getAttribute('data-music-mode'),'PEACE');
+  assert.equal(await page.locator('main').getAttribute('data-music-mode'),'VENGEANCE');
   await point(page,0).click();await waitSaved(page,s=>s.controller==='Black');
   assert.equal(await page.locator('main').getAttribute('data-music-mode'),'VENGEANCE');
   await soundSettings(page,async()=>{assert.equal(await button(page,'Pause music').isVisible(),true);await button(page,'Pause music').click();});
   await loadFixture(page,moveFixture());
   assert.equal(await page.locator('main').getAttribute('data-music-mode'),'WAR');
   assert.equal(await page.evaluate(()=>localStorage.getItem('warPeaceBackgammonMusicEnabledV1')),'off');
+});
+
+register('the opponent chooses the quiet first move as well as the later forced capture',async page=>{
+  await loadFixture(page,makeSave({white:{0:1},black:{3:1},mode:'PEACE',remainingDice:[1,2]}));
+  const initial=await saved(page);
+  assert.equal(initial.controller,'Black');
+  assert.equal(initial.moveLog.length,0);
+  assert.equal(initial.bar.Black,0);
+  assert.match(await page.getByTestId('turn').innerText(),/BLACK MAKES ALL MOVES/);
+  await point(page,0).click();await point(page,1).click();
+  const quiet=await waitSaved(page,s=>s.moveLog.length===1);
+  assert.equal(quiet.moveLog[0].move.isHit,false);
+  assert.equal(quiet.moveLog[0].controller,'Black');
+  await button(page,'Undo move').click();
+  await waitSaved(page,s=>s.moveLog.length===0&&s.remainingDice.length===2);
+  assert.equal((await saved(page)).controller,'Black');
+  await point(page,0).click();await point(page,1).click();
+  await page.reload({waitUntil:'networkidle'});await button(page,'Continue saved game').click();
+  assert.match(await page.getByTestId('turn').innerText(),/BLACK MAKES ALL MOVES/);
+  await point(page,1).click();await point(page,3).click();
+  const final=await waitSaved(page,s=>s.remainingDice.length===0);
+  assert.equal(final.bar.Black,1);
+  assert.ok(final.moveLog.every(m=>m.controller==='Black'));
+});
+
+register('a complete quiet PEACE option prevents VENGEANCE and prevents choosing a capture',async page=>{
+  await loadFixture(page,makeSave({white:{0:1,18:14},black:{1:1,5:14},mode:'PEACE',remainingDice:[1]}));
+  assert.equal((await saved(page)).controller,'White');
+  assert.equal(await page.locator('.theme-vengeance').count(),0);
+  await point(page,0).click();await point(page,1).click();
+  assert.equal((await saved(page)).bar.Black,0);
+  await point(page,18).click();await point(page,19).click();
+  const final=await waitSaved(page,s=>s.remainingDice.length===0);
+  assert.equal(final.bar.Black,0);
+  assert.equal(final.controller,'White');
+});
+
+register('the opponent computer owns the quiet first move before a forced capture',async page=>{
+  await loadFixture(page,makeSave({white:{0:1},black:{3:1},mode:'PEACE',remainingDice:[1,2],playSetupMode:'COMPUTER_BALANCED'}));
+  assert.equal((await saved(page)).controller,'Black');
+  await point(page,0).click();
+  assert.equal(await point(page,0).getAttribute('data-selected'),'false');
+  const first=await waitSaved(page,s=>s.moveLog.length>=1);
+  assert.equal(first.moveLog[0].controller,'Black');
+  assert.equal(first.moveLog[0].move.isHit,false);
+  const final=await waitSaved(page,s=>s.moveLog.length>=2);
+  assert.equal(final.bar.Black,1);
+  assert.ok(final.moveLog.every(m=>m.controller==='Black'));
+});
+
+register('the human opponent controls the computer checkers from the first quiet move',async page=>{
+  await loadFixture(page,makeSave({white:{20:1},black:{23:1},mode:'PEACE',remainingDice:[1,2],currentPlayer:'Black',controller:'Black',playSetupMode:'COMPUTER_BALANCED'}));
+  assert.equal((await saved(page)).controller,'White');
+  await page.waitForTimeout(800);
+  assert.equal((await saved(page)).moveLog.length,0,'The computer must wait for its opponent.');
+  await point(page,23).click();await point(page,22).click();
+  const first=await waitSaved(page,s=>s.moveLog.length===1);
+  assert.equal(first.moveLog[0].move.isHit,false);
+  assert.equal(first.moveLog[0].controller,'White');
+  await point(page,22).click();await point(page,20).click();
+  const final=await waitSaved(page,s=>s.remainingDice.length===0);
+  assert.equal(final.bar.White,1);
+  assert.ok(final.moveLog.every(m=>m.controller==='White'));
+});
+
+register('the opponent can choose minimum one or all four captures with the same dice',async page=>{
+  await page.setViewportSize({width:912,height:590});
+  const tap=index=>point(page,index).tap();
+  for(const extra of [false,true]){
+    await loadFixture(page,makeSave({white:{18:14},black:{0:1,1:1,2:1,3:1},bar:{White:1,Black:0},mode:'PEACE',remainingDice:[1,1,1,1]}));
+    assert.equal((await saved(page)).controller,'Black');
+    await page.waitForTimeout(180);
+    assert.ok(await page.locator('.game-console').evaluate(n=>n.getBoundingClientRect().bottom<=innerHeight+1),'Four dice and controls fit the short iPad viewport.');
+    await tap(0);
+    await waitSaved(page,s=>s.moveLog.length===1);
+    for(let n=0;n<3;n++){
+      await tap(extra?n:18+n);await tap(extra?n+1:19+n);
+      await waitSaved(page,s=>s.moveLog.length===n+2);
+    }
+    const final=await waitSaved(page,s=>s.remainingDice.length===0);
+    assert.equal(final.bar.Black,extra?4:1);
+    assert.ok(final.moveLog.every(m=>m.controller==='Black'));
+    const bar=page.getByRole('button',{name:/^Black bar:/});
+    assert.equal(await bar.locator('.bar-checker').count(),extra?4:1);
+    assert.equal((await bar.innerText()).trim(),'');
+  }
+});
+
+register('captured checkers stack on the bar without numbers and dice use the side panel',async page=>{
+  for(const count of [1,6,15]){
+    await loadFixture(page,makeSave({white:{18:15},black:count===15?{}:{5:15-count},bar:{White:0,Black:count},mode:'WAR',remainingDice:[1,1,1,1]}));
+    const bar=page.getByRole('button',{name:/^Black bar:/});
+    assert.equal(await bar.locator('.bar-checker').count(),count);
+    assert.equal((await bar.innerText()).trim(),'');
+    const geometry=await bar.evaluate(node=>{
+      const bar=node.getBoundingClientRect(),pieces=[...node.querySelectorAll('.bar-checker')].map(n=>n.getBoundingClientRect());
+      return pieces.every((p,i)=>p.top>=bar.top&&p.bottom<=bar.bottom&&(!i||p.top>=pieces[i-1].bottom+1));
+    });
+    assert.equal(geometry,true);
+    const dice=await page.locator('.game-die').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().width));
+    assert.equal(dice.length,4);assert.ok(dice.every(size=>size>=44));
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  }
 });
 
 register('opening sound settings pauses the computer until the dialog closes',async page=>{

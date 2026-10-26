@@ -28,6 +28,11 @@ body:has(.theme-vengeance) { background:radial-gradient(ellipse at 50% 0%,#26102
 .board-checker { width:min(94%,calc((37.5cqw - 40px)/5)); box-shadow:inset 0 1px 2px #ffffff70,inset 0 0 0 3px #ffffff09,0 2px 1px #0009; }
 .board-checker::after { content:''; position:absolute; inset:15%; border-radius:50%; border:1px solid #d5bb8450; box-shadow:inset 0 1px 2px #0005,0 1px 1px #fff3; }
 .board-checker+.board-checker,.point-bottom .board-checker+.board-checker { margin:0; }
+.board-bar { container-type:size; padding:4px 0; }
+.bar-stack { display:flex; flex-direction:column; justify-content:center; align-items:center; width:100%; height:100%; gap:2px; }
+.bar-stack .bar-checker { flex:0 0 auto; width:min(84%,calc((100cqh - 8px - (var(--bar-count) - 1) * 2px) / var(--bar-count))); }
+.dice-panel .game-die,.dice-panel .die-empty { width:44px; height:44px; padding:7px; gap:3px; }
+.dice-panel .dice-row { min-height:44px; }
 .theme-vengeance .board-frame { border-color:#17111f; background:linear-gradient(115deg,#4a354f,#17101f 45%,#090a10); box-shadow:inset 0 0 0 1px #bc79df,0 0 16px #8e3ab766,0 6px 16px #0008; }
 .theme-vengeance .board-bar { background:linear-gradient(90deg,#09090e,#4a2b50 45%,#100d18); border-color:#86548d; }
 .theme-vengeance .off-tray { background:linear-gradient(90deg,#100d18,#2c1b35,#100d18); border-color:#76557d; }
@@ -54,20 +59,27 @@ body:has(.theme-vengeance) { background:radial-gradient(ellipse at 50% 0%,#26102
 @media (min-width:800px) and (min-aspect-ratio:6/5) {
  .game-layout { grid-template-columns:minmax(0,1fr) clamp(180px,20vw,220px); grid-template-rows:auto minmax(0,1fr); column-gap:10px; row-gap:0; align-items:stretch; }
  .board-frame { grid-column:1; grid-row:1/3; align-self:start; }
- .table-toolbar { grid-column:2; grid-row:1; grid-template-columns:1fr; gap:9px; padding:9px 9px 0; border:1px solid #684f43; border-bottom:0; border-radius:12px 12px 0 0; background:#17131b; }
+ .table-toolbar { grid-column:2; grid-row:1; grid-template-columns:1fr; gap:6px; padding:8px 9px 0; border:1px solid #684f43; border-bottom:0; border-radius:12px 12px 0 0; background:#17131b; }
  .table-toolbar .mode-badge { min-height:48px; }
  .table-toolbar .mode-badge strong { font-size:24px; }
  .table-toolbar .mode-badge.badge-control strong { font-size:20px; }
  .table-toolbar .mode-badge small { font-size:9px; }
  .table-toolbar .turn-summary { min-height:36px; }
  .table-toolbar .pip-summary { padding:3px 0 6px; }
- .game-console { grid-column:2; grid-row:2; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; min-height:0; gap:8px; padding:9px; border-top:0; border-radius:0 0 12px 12px; }
+ .game-console { grid-column:2; grid-row:2; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; min-height:0; gap:6px; padding:8px 9px; border-top:0; border-radius:0 0 12px 12px; }
  .game-console .dice-panel { padding-top:2px; }
+ .game-console .dice-panel .console-label { font-size:10px; }
+ .game-console .dice-panel .dice-row { display:grid; grid-template-columns:repeat(2,max-content); justify-content:center; gap:8px; padding:5px 0; }
+ .game-console .dice-panel .game-die,.game-console .dice-panel .die-empty { width:clamp(48px,calc((100dvh - 350px)/4),68px); height:clamp(48px,calc((100dvh - 350px)/4),68px); padding:9px; gap:4px; }
+ .game-console .dice-panel.has-doubles .game-die { width:clamp(44px,calc((100dvh - 430px)/4),60px); height:clamp(44px,calc((100dvh - 430px)/4),60px); padding:7px; gap:3px; }
+ .theme-vengeance .turn-summary { padding:3px 4px; border-left:3px solid #d2afff; background:#4b245a70; }
+ .theme-vengeance .turn-summary .tiny-checker { display:none; }
+ .theme-vengeance .turn-summary strong { font-size:13px; color:#f5dfff; }
  .game-console .game-status { flex:1; padding:6px 2px; }
  .game-status small { display:block; margin:5px 0 0; }
- .game-console .secondary-actions { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
- .game-console .secondary-actions button:last-child { grid-column:1/-1; }
- .game-console .secondary-actions button { padding:7px 4px; }
+ .game-console .secondary-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }
+ .game-console .secondary-actions button:last-child { grid-column:auto; }
+ .game-console .secondary-actions button { padding:7px 2px; }
  .game-console .main-actions { width:100%; }
  .game-opponent { font-size:11px; }
 }

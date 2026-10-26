@@ -1,10 +1,10 @@
 # War & Peace Backgammon
 
-A browser backgammon game in which playable doubles switch the rules between **WAR** and **PEACE**. In PEACE, a forced capture can give the opponent control of the rest of the turn.
+A browser backgammon game in which playable doubles switch the rules between **WAR** and **PEACE**. In PEACE, an unavoidable capture gives the opponent control of the entire rolled turn, before the first move.
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.3.1**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.4.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -31,13 +31,13 @@ Full frames identify the moves: gold dashes mark playable sources, an ivory fram
 1. **Opening:** Each player rolls one die; ties are rerolled. The higher roller chooses WAR or PEACE and moves first using those two opening dice.
 2. **Dice use comes first:** Use the maximum number of moves possible, even when completing the turn requires a PEACE capture. Either die may be played first when that order satisfies the rules. There is no separate higher-die preference, including when only one die can be used. Doubles provide four moves, all of which must be used when possible.
 3. **WAR:** Among the sequences satisfying the dice-use rules, choose a sequence with the greatest number of captures.
-4. **PEACE:** Among the turns using the maximum number of moves, choose the fewest captures. A quiet move that strands a playable die is not permitted when a complete turn exists. A forced capture remains compulsory and triggers Enemy Control.
+4. **PEACE:** Among the turns using the maximum number of moves, choose the fewest captures. A quiet move that strands a playable die is not permitted when a complete turn exists. If every complete turn requires a capture, the opponent instead makes ALL moves using that roll (VENGEANCE). They may choose the minimum capture or additional captures where legal; they cannot choose a zero-capture or shorter turn.
 5. **Bearing-off priority:** If every remaining checker was already home and the bar empty when this turn began, maximize bearing off after satisfying the WAR/PEACE capture priority. In WAR, captures take priority over extra bear-offs. If the last outside checker comes home during the turn, bearing off becomes possible but maximizing bear-offs is optional until the next turn. Ordinary exact-die and oversized-die restrictions still apply.
-6. **Enemy Control:** A capture during normal PEACE play gives the opponent control of the moving player's checkers for the remainder of that turn. The opponent uses the unused dice; there is no extra roll. WAR/PEACE and bearing-off priorities are suspended during Enemy Control, while ordinary movement and maximum move use remain in force.
+6. **Enemy Control:** When no complete quiet PEACE turn exists, the opponent makes ALL moves with the rolling player's checkers using only the rolled dice. This includes quiet moves preceding a later capture. They may choose the minimum or additional captures where legal. There is no extra roll. WAR/PEACE and bearing-off priorities are suspended during Enemy Control, while ordinary movement and maximum move use remain in force.
 7. **Doubles:** Playable doubles switch WAR to PEACE or PEACE to WAR before the moves. Completely blocked doubles preserve the current mode and the turn passes.
 8. **Winning:** Bear off all 15 checkers, or win by the opponent's resignation.
 
-Captured checkers are called **Prisoners of War** or **Prisoners of Peace**. A deliberately exposed checker can act as a PEACE “land mine” if it forces a capture and leaves useful dice for Enemy Control. The tactic creates an opportunity, not a guaranteed comeback.
+Captured checkers are called **Prisoners of War** or **Prisoners of Peace**. A deliberately exposed checker can act as a PEACE “land mine” if it makes a capture unavoidable and gives you control of the entire roll. The tactic creates an opportunity, not a guaranteed comeback.
 
 Both computer opponents consider **cautious landmine play from 50 through 75 pips behind**, and **stronger landmine play when more than 75 pips behind**. They consider the opponent's made home points, open entries, and exposed home checkers before accepting a capture risk. The Aggressive opponent accepts more exposure; a closed opposing home board discourages sacrifice. Landmine play is disabled when the checkers have passed one another and contact is no longer possible.
 
@@ -46,6 +46,12 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 ## Saved progress
 
 Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.4.0 — whole-roll VENGEANCE
+
+Before moving in PEACE, examine all turns using the maximum playable dice. If a quiet complete turn exists, keep PEACE and play quietly. Otherwise the opponent commands ALL moves using that roll, including quiet moves before an unavoidable capture. The opponent may choose the minimum or additional captures where legal; at least one capture remains compulsory, and no extra roll is added. The controller stays fixed through the roll and across undo/reload.
+
+The table prominently identifies who makes ALL MOVES. Dice are larger, with doubles in a two-by-two arrangement on landscape tablets. Captured checkers are drawn individually on the bar, without visible count numbers. Rules and illustrated lessons explain the whole-roll handoff.
 
 ## Version 0.3.1 — larger iPad board
 

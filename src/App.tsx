@@ -75,6 +75,8 @@ type Sequence = {
 };
 
 type LegalAnalysis = {
+  controlState: ControlState;
+  controller: Player;
   legalSequences: Sequence[];
   legalMoves: Move[];
   explanation: string[];
@@ -883,7 +885,7 @@ function filterByWarPeace(
   if (sequences.length === 0) return sequences;
 
   if (controlState === "ENEMY_CONTROL") {
-    explanation.push("ENEMY CONTROL: WAR/PEACE restrictions are suspended.");
+    explanation.push("VENGEANCE: the opponent makes ALL moves; capture and bear-off priorities are suspended.");
     return sequences;
   }
 
@@ -953,7 +955,7 @@ function analyzeLegality(
   const explanation: string[] = [];
 
   if (dice.length === 0) {
-    return { legalSequences: [], legalMoves: [], explanation: ["No dice available."] };
+    return { controlState, controller: controlState === "ENEMY_CONTROL" ? opponent(player) : player, legalSequences: [], legalMoves: [], explanation: ["No dice available."] };
   }
 
   const generated = generateSequences(board, player, dice, bar, off).filter(
@@ -961,7 +963,7 @@ function analyzeLegality(
   );
 
   if (generated.length === 0) {
-    return { legalSequences: [], legalMoves: [], explanation: ["No legal moves available."] };
+    return { controlState, controller: controlState === "ENEMY_CONTROL" ? opponent(player) : player, legalSequences: [], legalMoves: [], explanation: ["No legal moves available."] };
   }
 
   if (bar[player] > 0) explanation.push(`${player} must enter from the bar before moving other checkers.`);
@@ -970,10 +972,13 @@ function analyzeLegality(
   const maxMovesUsed = Math.max(...best.map((sequence) => sequence.moves.length));
   explanation.push(`Maximum dice-use rule: ${maxMovesUsed} move(s) available.`);
 
-  best = filterByWarPeace(best, mode, controlState, explanation, bearOffPriorityAtTurnStart);
+  // Assign the entire turn before capture/bear-off priorities are applied.
+  const effectiveControl: ControlState = controlState === "ENEMY_CONTROL" ||
+    (mode === "PEACE" && best.every(sequence => sequence.totalHits > 0)) ? "ENEMY_CONTROL" : "NORMAL";
+  best = filterByWarPeace(best, mode, effectiveControl, explanation, bearOffPriorityAtTurnStart);
   best = filterByMaximumMoves(best);
 
-  return { legalSequences: best, legalMoves: dedupeFirstMoves(best), explanation };
+  return { controlState: effectiveControl, controller: effectiveControl === "ENEMY_CONTROL" ? opponent(player) : player, legalSequences: best, legalMoves: dedupeFirstMoves(best), explanation };
 }
 
 function savedTurnStartedAllHome(saved: SavedGameState): boolean {
@@ -1277,8 +1282,8 @@ export default function App() {
   const [off, setOff] = useState<OffState>({ White: 0, Black: 0 });
   const [mode, setMode] = useState<Mode>("WAR");
   const [currentPlayer, setCurrentPlayer] = useState<Player>("White");
-  const [controller, setController] = useState<Player>("White");
-  const [controlState, setControlState] = useState<ControlState>("NORMAL");
+  const [storedController, setController] = useState<Player>("White");
+  const [storedControlState, setControlState] = useState<ControlState>("NORMAL");
   const [gamePhase, setGamePhase] = useState<GamePhase>("OPENING_ROLL");
   const [remainingDice, setRemainingDice] = useState<number[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
@@ -1328,6 +1333,7 @@ export default function App() {
     return Number.isFinite(value) ? Math.max(0, Math.min(.6, value)) : .28;
   });
   const musicRef = useRef<ReturnType<typeof createMusicPlayer> | null>(null);
+  const controlAnnouncementRef = useRef("");
   const [saveAvailable, setSaveAvailable] = useState(true);
   const [playSetupMode, setPlaySetupMode] = useState<PlaySetupMode>("MENU");
   const [computerStrategy, setComputerStrategy] = useState<AutoTestStrategy>("BALANCED");
@@ -1427,11 +1433,13 @@ export default function App() {
   }, []);
 
   const legalAnalysis = useMemo(
-    () => analyzeLegality(board, currentPlayer, remainingDice, mode, bar, off, controlState, bearOffPriorityAtTurnStart),
-    [board, currentPlayer, remainingDice, mode, bar, off, controlState, bearOffPriorityAtTurnStart]
+    () => analyzeLegality(board, currentPlayer, remainingDice, mode, bar, off, storedControlState, bearOffPriorityAtTurnStart),
+    [board, currentPlayer, remainingDice, mode, bar, off, storedControlState, bearOffPriorityAtTurnStart]
   );
 
   const legalMoves = legalAnalysis.legalMoves;
+  const controlState = legalAnalysis.controlState;
+  const controller = controlState === "ENEMY_CONTROL" ? opponent(currentPlayer) : storedController;
   const computerLandmineProfile = useMemo(() => getLandmineProfile({ board, bar, off }, "Black"), [board, bar, off]);
   const legalOriginPoints = useMemo(
     () =>
@@ -1512,7 +1520,7 @@ export default function App() {
   const isComputerGame = playSetupMode === "COMPUTER_BALANCED" || playSetupMode === "COMPUTER_AGGRESSIVE";
   const isComputerController = isComputerGame && controller === "Black" && winner === null;
   const setupComplete = playSetupMode !== "MENU";
-  const vengeanceActive = controlState === "ENEMY_CONTROL" && remainingDice.length > 0 && legalMoves.length > 0 && winner === null;
+  const vengeanceActive = controlState === "ENEMY_CONTROL" && turnIsPlayable && winner === null;
   const musicMode: MusicMode = vengeanceActive ? "VENGEANCE" : mode;
   const tableFit = useTableFit(setupComplete && betaUnlocked, canEditPlayers);
 
@@ -1531,6 +1539,25 @@ export default function App() {
     window.addEventListener("pagehide", stop);
     return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("pagehide", stop); };
   }, []);
+
+  useEffect(() => {
+    if (!setupComplete || !vengeanceActive || awaitingModeChoice || diceRolling) {
+      controlAnnouncementRef.current = "";
+      return;
+    }
+    const key = `${gameRolls}:${currentPlayer}:${gamePhase}`;
+    if (controlAnnouncementRef.current === key) return;
+    controlAnnouncementRef.current = key;
+    const detail = `${controller} (the opponent) makes ALL moves with ${currentPlayer}’s checkers and all playable dice. At least one capture is unavoidable. Choose the minimum or additional captures where legal. No extra roll.`;
+    narrate({kind:"vengeance", title:"VENGEANCE — ALL MOVES", detail, player:controller});
+    if (soundEnabled && !autoTestRunning) playVengeanceSound();
+    if (autoTestRunning) {
+      autoTestGameEnemyControlTriggersRef.current += 1;
+      if (controller === "White") autoTestGameWhiteGainedEnemyControlRef.current += 1;
+      else autoTestGameBlackGainedEnemyControlRef.current += 1;
+      if (calculatePipCount(board, controller, bar) - calculatePipCount(board, currentPlayer, bar) >= 30) autoTestGameEnemyControlWhileTrailing30Ref.current += 1;
+    }
+  }, [setupComplete, vengeanceActive, awaitingModeChoice, diceRolling, gameRolls, currentPlayer, gamePhase, controller, soundEnabled, autoTestRunning]);
 
   function resumeAudio(): void {
     if (soundEnabled) getAudioContext();
@@ -2415,7 +2442,6 @@ export default function App() {
     ]);
 
     const enemyControlMoveBeforeThisMove = autoTestRunning && controlState === "ENEMY_CONTROL";
-    const peaceViolationTriggersEnemyControl = mode === "PEACE" && controlState === "NORMAL" && move.isHit;
 
     if (autoTestRunning) {
       autoTestCheckerMovesRef.current += 1;
@@ -2435,27 +2461,10 @@ export default function App() {
       if (move.isHit) autoTestGameEnemyControlCausedHitsRef.current += 1;
     }
 
-    if (autoTestRunning && peaceViolationTriggersEnemyControl) {
-      const beneficiary = opponent(currentPlayer);
-      const beneficiaryPips = calculatePipCount(board, beneficiary, bar);
-      const violatingPlayerPips = calculatePipCount(board, currentPlayer, bar);
-      autoTestGameEnemyControlTriggersRef.current += 1;
-      if (beneficiary === "White") autoTestGameWhiteGainedEnemyControlRef.current += 1;
-      if (beneficiary === "Black") autoTestGameBlackGainedEnemyControlRef.current += 1;
-      if (beneficiaryPips - violatingPlayerPips >= 30) {
-        autoTestGameEnemyControlWhileTrailing30Ref.current += 1;
-      }
-    }
-
     const result = applyMove(board, move, currentPlayer, bar, off);
     const nextDice = removeDie(remainingDice, move.die);
-    let nextControlState = controlState;
-    let nextController = controller;
-
-    if (peaceViolationTriggersEnemyControl) {
-      nextControlState = "ENEMY_CONTROL";
-      nextController = opponent(currentPlayer);
-    }
+    const nextControlState = controlState;
+    const nextController = controller;
 
     const nextLegalAnalysis = analyzeLegality(
       result.board,
@@ -2496,27 +2505,19 @@ export default function App() {
     setController(nextController);
     setControlState(nextControlState);
     if (soundEnabled) {
-      if (peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0) playVengeanceSound();
-      else if (move.isHit && mode === "PEACE") playPeaceViolationSound();
+      if (move.isHit && mode === "PEACE") playPeaceViolationSound();
       else if (move.isHit) playCaptureSound();
       else playClickSound();
     }
     triggerMoveAnimation(move);
 
     if (move.isHit) {
-      const controlDetail = peaceViolationTriggersEnemyControl
-        ? nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0
-          ? `${nextController} takes Enemy Control of ${currentPlayer}’s checkers using the unused dice. No extra roll.`
-          : "No playable moves remain for Enemy Control."
-        : controlState === "ENEMY_CONTROL"
-          ? `${controller} chose this move under Enemy Control.`
-          : `${opponent(currentPlayer)} must re-enter from the bar.`;
-      narrate({
-        kind: peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0 ? "vengeance" : mode === "WAR" ? "war-capture" : "peace-capture",
-        title: peaceViolationTriggersEnemyControl && nextDice.length > 0 && nextLegalAnalysis.legalMoves.length > 0 ? "VENGEANCE" : mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace",
-        detail: `${mode === "PEACE" ? "Prisoner of Peace. " : ""}${currentPlayer} captures on point ${move.to + 1}. ${controlDetail}`,
-        player: opponent(currentPlayer),
-      });
+      const controlDetail = controlState === "ENEMY_CONTROL"
+        ? `${controller} (opponent) chose this move with ${currentPlayer}’s checker. ALL moves in this turn belong to ${controller}.`
+        : `${opponent(currentPlayer)} must re-enter from the bar.`;
+      narrate({kind: mode === "WAR" ? "war-capture" : "peace-capture",
+        title: mode === "WAR" ? "Prisoner of War" : "Prisoner of Peace",
+        detail: `${currentPlayer} captures on point ${move.to + 1}. ${controlDetail}`, player: opponent(currentPlayer)});
     } else if (move.isBearOff) {
       narrate({ kind: "bear-off", title: "Checker borne off", detail: `${currentPlayer} has borne off ${result.off[currentPlayer]} of 15 checkers.`, player: currentPlayer });
     } else if (mode === "PEACE" && controlState === "NORMAL" && narrationEnabled && !autoTestRunning) {
@@ -2528,7 +2529,7 @@ export default function App() {
           .some((candidate) => candidate.isHit && newBlots.includes(candidate.to));
         if (reachable) narrate({
           kind: "landmine", title: "A possible PEACE landmine",
-          detail: `${currentPlayer} is ${profile.deficit} pips behind. A forced capture could give them the remaining enemy moves. ${profile.openEntryPoints} re-entry points are open.`,
+          detail: `${currentPlayer} is ${profile.deficit} pips behind. An unavoidable PEACE capture gives them all enemy moves from the start of that roll. ${profile.openEntryPoints} re-entry points are open.`,
           player: currentPlayer,
         });
       }
@@ -2546,7 +2547,7 @@ export default function App() {
     }
 
     if (nextControlState === "ENEMY_CONTROL") {
-      setMessage(`ENEMY CONTROL: ${nextController} controls the rest of this turn. WAR/PEACE restrictions are suspended.`);
+      setMessage(`VENGEANCE: ${nextController} (opponent) makes ALL moves with ${currentPlayer}’s checkers. Choose more or fewer captures; use every playable die.`);
       return;
     }
 
@@ -3412,8 +3413,10 @@ export default function App() {
       onClick={() => { if (required) {
         setSelectedPoint(null); setLegalHelpActive(true); setMessage("Enter from the bar onto a highlighted point.");
       } }}>
-      <span className="bar-word">BAR</span>
-      {bar[player] > 0 && <><span className={"bar-checker " + (player === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" /><strong>{bar[player]}</strong></>}
+      {bar[player] === 0 ? <span className="bar-word">BAR</span> :
+        <span className="bar-stack" style={{"--bar-count":bar[player]} as React.CSSProperties} aria-hidden="true">
+          {Array.from({length:bar[player]},(_,index)=><span key={index} className={"bar-checker " + (player === "White" ? "checker-light" : "checker-dark")} />)}
+        </span>}
     </button>;
   }
 
@@ -3592,7 +3595,7 @@ export default function App() {
   const humanCanAct = !isComputerController && !autoTestRunning && !diceRolling && !confirmResign;
   const canChooseHere = canChooseDoctrine && humanCanAct;
   const statusText = winner && finalResult ? formatFinalResult(finalResult) :
-    diceRolling ? "Rolling dice…" : isComputerController ? "Computer is thinking…" :
+    diceRolling ? "Rolling dice…" : vengeanceActive ? `ALL MOVES: ${controller} (opponent). ${remainingDice.length === 0 || legalMoves.length === 0 ? "Roll complete — end turn." : "At least one capture; extra captures optional."}` : isComputerController ? "Computer is thinking…" :
     canChooseHere ? "You won the opening roll. Choose WAR or PEACE." : message;
 
   return (
@@ -3642,8 +3645,8 @@ export default function App() {
             </div>
             <div className="turn-summary" data-testid="turn">
               <span className={"tiny-checker " + (currentPlayer === "White" ? "checker-light" : "checker-dark")} aria-hidden="true" />
-              <div><strong>{winner ? winner + " wins" : enemyControl ? controller + " commands" : currentPlayer + " to move"}</strong>
-                <small>{enemyControl ? currentPlayer + "’s checkers · unused dice" : currentPlayer === "White" ? whitePlayerName : blackPlayerName}</small></div>
+              <div><strong>{winner ? winner + " wins" : enemyControl ? controller.toUpperCase() + " MAKES ALL MOVES" : currentPlayer + " to move"}</strong>
+                <small>{enemyControl ? currentPlayer + "’s checkers · THIS ROLL" : currentPlayer === "White" ? whitePlayerName : blackPlayerName}</small></div>
             </div>
             <div className="pip-summary" aria-label="Pip counts">
               <div><small>WHITE</small><strong>{whitePipCount}</strong></div>
@@ -3667,7 +3670,7 @@ export default function App() {
           </div>
 
           <aside className="game-console" aria-label="Game controls">
-            <div className="dice-panel">
+            <div className={"dice-panel" + (displayDice.length > 2 ? " has-doubles" : "")}>
               <span className="console-label">{awaitingModeChoice ? "OPENING ROLL" : "DICE REMAINING"}</span>
               <div className={"dice-row " + (diceRolling ? "dice-rolling" : "")} data-testid="dice">
                 {displayDice.length ? displayDice.map(renderDie) : <><span className="die-empty">·</span><span className="die-empty">·</span></>}
@@ -3711,7 +3714,7 @@ export default function App() {
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
         </details>
-        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.3.1</span></footer>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.4.0</span></footer>
         </div>
 
         {showRecords && <section className="records-panel">

@@ -70,8 +70,8 @@ export default function GameIntro({
           </div>
           <p className="wp-intro-description">
             Playable doubles switch the mode. In PEACE, an exposed checker can become a
-            land mine: force a capture and take control of your opponent’s remaining
-            moves. Every playable die must be used—even when that breaks the peace.
+            land mine: make a capture unavoidable and control ALL moves in that roll,
+            including quiet moves before the capture. Every playable die must be used—even when that breaks the peace.
           </p>
           <button className="wp-text-button wp-learn-button" type="button" onClick={onShowRules}>
             How to play <span aria-hidden="true">↗</span>
