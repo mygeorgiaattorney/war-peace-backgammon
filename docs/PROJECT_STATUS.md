@@ -2,9 +2,17 @@
 
 - **Last reviewed:** October 26, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.3.1 — October 26, 2026
+- **Released version:** 0.4.0 — October 26, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.4.0 — whole-roll VENGEANCE correction
+
+Richard clarified that PEACE hands over the entire rolled turn when no complete quiet turn exists. Detect this before the first move, not after a capture. Preserve ordinary movement, bar entry and maximum dice use. Give the opponent all choices, including quiet moves preceding a capture and the choice between minimum or additional captures. A zero-capture path prevents VENGEANCE; it is not a permitted option on a roll that triggers VENGEANCE. No extra dice are rolled. Derived controller state is used consistently by human interaction, computer choices, undo, save and reload; once assigned, control remains with that opponent for the roll.
+
+Persistent ALL MOVES wording names the opponent and whose checkers are moving. The handoff sound/narration starts before any move. Larger dice use more side-panel space; doubles wrap into two rows. Bars show every captured checker without visible count numbers; counts remain accessible to screen readers. Updated the rules and illustrated lessons. Restricted name-entry blur fitting to text fields, so focus changes between checker points do not resize the board during a tap.
+
+Validation: 30 engine and 11 strategy regressions; gameplay/browser checks including a quiet first move, one-versus-four capture choices with the same doubles, zero-capture prevention, final-die handoff, undo/reload and bar stacks through 15 pieces; Chromium/WebKit layout and touch checks; 18 theme/viewport inspections; 20 complete simulated games with checker conservation and at least one capture for every newly triggered VENGEANCE roll; production build. Physical-device confirmation remains with Richard.
 
 ## Version 0.3.1 — iPad size correction
 
@@ -38,7 +46,7 @@ The later file `App_warpeace_intro_polish_replacement.tsx`, supplied July 25, 20
 | Rules help | Overview, Core Rules, and Strategy tabs, available during play. |
 | Rules priorities | Maximum number of playable moves first, including forced PEACE captures; then WAR maximum captures or PEACE minimum captures. No separate higher-die preference. |
 | Bearing-off priority | Maximize bear-offs only when all remaining checkers were already home and the bar empty at the start of the turn, after the capture priority. Entering home mid-turn permits bearing off without making it compulsory that turn. WAR captures take priority over extra bear-offs. |
-| Enemy Control | The opponent controls the violating player's remaining moves; maximum move use still applies. Capture and bearing-off priorities are suspended. |
+| Enemy Control | If no complete quiet PEACE turn exists, the opponent controls ALL moves from the start of the roll, using only that roll. At least one capture is compulsory; the opponent may choose the minimum or additional captures where legal. Maximum dice use still applies; capture and bear-off priorities are suspended. |
 | Computer landmines | Both computers consider cautious landmines from 50 through 75 pips behind and stronger landmines beyond 75, accounting for opposing home blocks, open entry points, and exposed checkers. Aggressive accepts more exposure. No-contact races do not use landmine play. |
 | Narration and sound | Optional illustrated gameplay notices; separate Sound control. Forceful WAR captures and somber PEACE captures use distinct cues. Preferences persist in the browser. |
 | Blocked doubles | No WAR/PEACE switch when the roll has no legal move. |

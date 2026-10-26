@@ -25,7 +25,7 @@ export default function RuleExamples() {
           <span>{pointIndex + 1}</span><div className="example-pile">{Array.from({length: Math.min(point.count, 5)}, (_, n) => <i key={n} className={'example-checker checker-' + (point.owner === 'White' ? 'light' : 'dark')} />)}</div>
         </div>;
       }))}
-      <div className="example-bar"><span>White bar<br/>{state.bar.White}</span><span>BAR</span><span>Black bar<br/>{state.bar.Black}</span></div>
+      <div className="example-bar"><div className="example-prisoners" aria-label={`White bar: ${state.bar.White}`}>{Array.from({length:state.bar.White},(_,n)=><i key={n} className="example-checker checker-light"/>)}</div><span>BAR</span><div className="example-prisoners" aria-label={`Black bar: ${state.bar.Black}`}>{Array.from({length:state.bar.Black},(_,n)=><i key={n} className="example-checker checker-dark"/>)}</div></div>
     </div>
     <div className="example-caption"><span>{control ? `${state.controller} commands ${state.player}'s checkers` : `${state.player} moves · ${state.mode}`}</span><span>Dice left: {state.dice.join(' · ') || 'none'} · White off {state.off.White} · Black off {state.off.Black}</span></div>
     <div className="example-actions"><button type="button" disabled={index === 0} onClick={() => setIndex(value => value - 1)}>Back</button><button type="button" onClick={() => setIndex(value => (value + 1) % data.states.length)}>{state.action}</button><span>{index + 1} / {data.states.length}</span></div>

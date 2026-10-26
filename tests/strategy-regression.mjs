@@ -50,7 +50,7 @@ function choose(state, dice, { player = 'White', controller = player, mode = 'PE
   const priority = engine.allHome(state.board, player, state.bar);
   const analysis = engine.analyzeLegality(state.board, player, dice, mode, state.bar, state.off, controlState, priority);
   const chosen = chooseStrategicMove({
-    position: state, player, controller, mode, dice, strategy: computer,
+    position: state, player, controller: analysis.controller, mode, dice, strategy: computer,
     legalSequences: analysis.legalSequences,
     applyMove: engine.applyMove, rawMoves: engine.getRawMoves,
     controlledContinuations: (next, left) => engine.analyzeLegality(
@@ -165,9 +165,11 @@ test('both computer strategies remain inside mandatory full-turn PEACE legality'
   for (const computer of ['BALANCED', 'CONTROLLED_COMEBACK']) {
     const move = choose(state, [1, 2], { computer });
     assert.equal(move.from, 0);
-    assert.equal(move.to, 2);
+    assert.ok([1,2].includes(move.to));
     const next = engine.applyMove(state.board, move, 'White', state.bar, state.off);
-    assert.equal(choose(next, [1], { computer }).isHit, true);
+    const follow=choose(next,[move.die===1?2:1],{computer,controller:'Black'});
+    assert.ok(follow);
+    assert.equal(Number(move.isHit)+Number(follow.isHit)>=1,true);
   }
 });
 

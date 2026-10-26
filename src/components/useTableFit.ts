@@ -34,17 +34,21 @@ export default function useTableFit(active: boolean, openingNames: boolean) {
       if (editingOrZooming()) return;
       app?.style.removeProperty('--table-width'); schedule();
     }
+    function textEntryFinished(event: FocusEvent) {
+      // Tapping between board points must not resize the board mid-gesture.
+      if (event.target instanceof HTMLElement && event.target.matches('input:not([type="range"]), textarea, [contenteditable="true"]')) reset();
+    }
     const observer = new ResizeObserver(schedule);
     observer.observe(shell);
     window.addEventListener('resize', reset);
     window.visualViewport?.addEventListener('resize', reset);
-    shell.addEventListener('focusout', reset);
+    shell.addEventListener('focusout', textEntryFinished);
     reset();
     return () => {
       observer.disconnect(); cancelAnimationFrame(pending);
       window.removeEventListener('resize', reset);
       window.visualViewport?.removeEventListener('resize', reset);
-      shell.removeEventListener('focusout', reset);
+      shell.removeEventListener('focusout', textEntryFinished);
     };
   }, [active, openingNames]);
   return {appRef, shellRef};

@@ -31,7 +31,7 @@ export default function GameNarration({ event, onDismiss }: Props) {
         <span className={`narration-checker ${event.player === "White" ? "checker-light" : "checker-dark"}`} />
       </div>
       <div className="narration-copy" role="status" aria-live="polite" aria-atomic="true">
-        <span className="narration-eyebrow">{vengeance ? "THE VICTIM TAKES COMMAND" : peace ? "THE COST OF PEACE" : event.kind === "landmine" ? "A COMEBACK CHANCE" : event.kind === "bear-off" ? "HOMEWARD" : "ON THE BATTLEFIELD"}</span>
+        <span className="narration-eyebrow">{vengeance ? "THE OPPONENT MAKES ALL MOVES" : peace ? "THE COST OF PEACE" : event.kind === "landmine" ? "A COMEBACK CHANCE" : event.kind === "bear-off" ? "HOMEWARD" : "ON THE BATTLEFIELD"}</span>
         <strong>{event.title}</strong>
         <p>{event.detail}</p>
       </div>

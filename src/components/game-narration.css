@@ -1,4 +1,5 @@
 .game-narration {
+  pointer-events:none;
   --narration-accent:#f4a079;
   position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
   display:grid; grid-template-columns:58px minmax(0,1fr) 28px; align-items:center; gap:12px;
@@ -17,7 +18,7 @@
 .narration-eyebrow { display:block; font-size:8px; line-height:1.5; letter-spacing:1.6px; color:var(--narration-accent); margin-bottom:4px; }
 .narration-copy strong { display:block; font-family:Georgia,serif; font-weight:400; font-size:22px; line-height:1.1; }
 .narration-copy p { margin:6px 0 0; color:#e1d5c4; font-size:12px; line-height:1.45; }
-.narration-dismiss { align-self:start; width:28px; height:32px; padding:0; font:22px/1 sans-serif; color:#dfcfb7; background:transparent; border:0; border-radius:4px; cursor:pointer; }
+.narration-dismiss { pointer-events:auto; align-self:start; width:28px; height:32px; padding:0; font:22px/1 sans-serif; color:#dfcfb7; background:transparent; border:0; border-radius:4px; cursor:pointer; }
 .narration-dismiss:hover,.narration-dismiss:focus-visible { background:#ffffff18; outline:1px solid var(--narration-accent); }
 .secondary-actions .narration-toggle { grid-column:1/-1; }
 .tactic-note { padding:8px 10px; border:1px solid #6f9b8866; border-left:3px solid #9ccfb7; border-radius:6px; background:#17342670; color:#cfe5d7; }

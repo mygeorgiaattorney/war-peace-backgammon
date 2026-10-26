@@ -141,7 +141,7 @@ function Overview() {
         <article className="wp-rule-card">
           <span className="wp-mode-label wp-mode-peace">PEACE</span>
           <h3>Keep the peace.</h3>
-          <p>Use every playable die, even if that forces a capture. Avoid hits among equally complete turns; a forced hit gives your opponent your remaining moves.</p>
+          <p>Use every playable die, even if that forces a capture. Avoid hits among equally complete turns; if a capture is unavoidable, your opponent makes ALL moves using that roll.</p>
         </article>
       </div>
       <div className="wp-rule-callout">
@@ -171,11 +171,11 @@ function CoreRules() {
       </li>
       <li>
         <h3>WAR and PEACE priorities</h3>
-        <p>First use as many dice as possible. Among those complete turns, WAR requires the most captures and PEACE requires the fewest. If all your checkers were already home when this turn began, next maximize the number borne off. In WAR, capturing takes priority over bearing off.</p>
+        <p>First use as many dice as possible. Among those complete turns, WAR requires the most captures. PEACE requires a quiet complete turn if one exists. If every complete turn captures, VENGEANCE gives all moves to the opponent, who may choose the minimum or additional captures. If all your checkers were already home when this turn began, next maximize the number borne off. In WAR, capturing takes priority over bearing off.</p>
       </li>
       <li>
         <h3>VENGEANCE — Enemy Control</h3>
-        <p>The PEACE capture happens first. The victim then commands the capturing player’s checkers using that turn’s unused dice: VENGEANCE. They may choose any ordinary legal moves that maximize dice use; capture and bearing-off priorities are suspended. The checkers keep their colors. The victim does not move their own checkers or bring their own prisoner back in. There is no extra roll. If no playable moves remain, there is no borrowed move.</p>
+        <p>Before the first move, check the whole roll. If every way to use the maximum playable dice in PEACE requires at least one capture, the opponent makes ALL moves with the rolling player’s checkers, using only that roll. This includes quiet moves before a later capture and a roll whose final die captures. The opponent may choose the minimum capture or additional captures wherever legal; zero captures is not an option for a roll that triggers VENGEANCE. Bar entry and maximum dice use remain compulsory. Capture and bearing-off priorities are suspended. Checkers keep their colors; the opponent does not move their own checkers or re-enter their own prisoners. There is no extra roll.</p>
       </li>
       <li>
         <h3>Doubles and blocked turns</h3>
@@ -196,7 +196,7 @@ function Strategy() {
         <span className="wp-strategy-number" aria-hidden="true">01</span>
         <div>
           <h3>Set a PEACE land mine</h3>
-          <p>A deliberately exposed checker can become a trap if using all playable dice forces your opponent to capture it. You then choose their remaining moves. An equally complete no-hit turn avoids the trap; stopping early does not.</p>
+          <p>A deliberately exposed checker can become a trap if using all playable dice forces your opponent to capture it. You then choose ALL moves from the start of their roll. An equally complete no-hit turn avoids the trap; stopping early does not.</p>
         </div>
       </article>
       <article>
@@ -210,7 +210,7 @@ function Strategy() {
         <span className="wp-strategy-number" aria-hidden="true">03</span>
         <div>
           <h3>Make Enemy Control count</h3>
-          <p>When you control your opponent’s checkers, look for legal moves that break up their defenses or leave them exposed. You use only the dice left in that turn.</p>
+          <p>When you control your opponent’s checkers, look for legal moves that break up their defenses or leave them exposed. You use only the dice from that roll; there is no extra roll.</p>
         </div>
       </article>
       <article>
