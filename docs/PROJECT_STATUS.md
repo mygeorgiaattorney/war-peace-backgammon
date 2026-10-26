@@ -2,9 +2,15 @@
 
 - **Last reviewed:** October 26, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.4.0 — October 26, 2026
+- **Released version:** 0.4.1 — October 26, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.4.1 — centered, optional game messages
+
+Moved illustrated announcements and ordinary turn notices inside the board frame so they remain centered horizontally and vertically on the playing board, including landscape side-control layouts. Added a visible **Messages on/off** button above the board and synchronized it with the renamed Messages switch in Sound settings. The existing saved preference continues to work. Switching off immediately clears current messages and suppresses subsequent turn notices and illustrated announcements, while music, sound effects, current-player guidance, legal-move feedback, and warnings remain independent. Messages are outside board layout flow and allow checker interactions underneath; the illustrated card retains its dismiss button.
+
+Production build and all 30 engine / 11 strategy regressions pass locally. Browser checks cover board-centered messages in desktop, landscape/portrait iPad, short tablet, and phone viewports; the visible switch; persistence after reload; immediate dismissal; and independence from sound. Local browser downloads are unavailable in this workspace, so the pull-request checks now run the existing browser suite against the production build before release. Browser verification pending.
 
 ## Version 0.4.0 — whole-roll VENGEANCE correction
 
