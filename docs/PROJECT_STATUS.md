@@ -2,9 +2,19 @@
 
 - **Last reviewed:** October 26, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.4.1 — October 26, 2026
+- **Released version:** 0.5.0 — October 26, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.5.0 — free die choice and retained roll display
+
+Removed high-to-low die enumeration and made die selection explicit and optional. Either side/value can be selected first where the existing custom turn rules permit it; ordinary checker selection still shows every legal die when no die has been selected. A selection applies consistently to taps, drags, bar entry, and ambiguous bearing off, and clears after a move or undo. All original dice remain on the table; consumed slots dim, including selected duplicate slots on doubles. Save format 4 preserves original dice, used indices, and the last six roll records (current plus five previous). Formats 1–3 remain accepted and reconstruct the current roll from available move history. Undo changes consumed slots without changing actual roll history.
+
+Replaced Math.random dice with unbiased crypto.getRandomValues sampling and removed the transition guard that discarded some doubles. Only opening ties are rerolled. Automated browser tests queue crypto samples in the test environment; production has no seed or result override.
+
+For iPad, the same current release provides centered messages, persistent message/effects switches, and VENGEANCE presentation. A rapid capture no longer replaces the handoff notice before it can be read. Enabling Messages in an existing VENGEANCE turn shows the handoff again. Trusted touch-end/click events resume audio in addition to pointer/key events, non-running contexts are resumed, and the music bus is rebuilt when the AudioContext is recreated. Test sound explicitly enables effects and exercises the current device. Existing preference choices are preserved.
+
+Validation: 33 engine and 11 strategy regressions pass locally. CI runs the full Chromium browser suite and focused WebKit checks for both die orders/colors, original slot dimming and undo/reload, bearing-off selection, five-roll history and short tablet layout, normal doubles after a blocked opening, VENGEANCE notices, sound activation, and audio-context recovery. Screenshots are retained by the release checks. Actual iPad speaker output remains a device confirmation.
 
 ## Version 0.4.1 — centered, optional game messages
 

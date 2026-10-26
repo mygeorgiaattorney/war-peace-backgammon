@@ -164,6 +164,8 @@ function CoreRules() {
       <li>
         <h3>Use your dice</h3>
         <p>Use the maximum number of dice that the position allows, in either order. There is no higher-die preference. You cannot choose a shorter turn to avoid a PEACE capture. Doubles provide four moves of the same value, and you must use all four when possible.</p>
+        <p>You may use either die first, regardless of which side it appears on. Move a checker directly, or tap an available die to show its moves; tap it again to show both. Used dice stay in place and dim. The five previous rolls appear beneath the current roll, newest first.</p>
+        <p>Dice use the browser’s secure random-number generator with equal chances for all six faces. Ordinary rolls are accepted as rolled, including doubles. Opening ties are rerolled.</p>
       </li>
       <li>
         <h3>Blocked points and prisoners</h3>

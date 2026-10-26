@@ -96,8 +96,10 @@ export function createMusicPlayer(getContext: () => AudioContext | null) {
 
   function start(nextMode: MusicMode, value: number) {
     if (document.hidden) return;
-    context = getContext();
-    if (!context) return;
+    const nextContext = getContext();
+    if (!nextContext) return;
+    if (context && context !== nextContext) { stop(); bus = null; }
+    context = nextContext;
     if (!bus) {
       bus = context.createGain();
       const limiter = context.createDynamicsCompressor();

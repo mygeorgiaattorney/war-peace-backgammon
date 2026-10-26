@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.4.1**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.5.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -21,6 +21,8 @@ Roll the opening dice and follow the turn prompt. Select a checker and a highlig
 If either die can legally bear off the selected checker, choose the die in the controls—for example **Use 4** or **Use 6**. Tapping, dragging, and tapping the selected source again all honor that choice.
 
 **How to play** opens the Overview, Core Rules, and Strategy tabs. A saved game can be continued from the opening menu. The interface supports touch, pointer input, and keyboard navigation; the board targets 4:3 tablet proportions.
+
+Use either available die first, regardless of its side or value. You can move a checker directly, or tap a die to show its moves; tap it again to show both dice. Used dice stay in their original positions and dim. The previous five rolls appear below the current roll, newest first.
 
 Full frames identify the moves: gold dashes mark playable sources, an ivory frame marks the selected source, cyan marks destinations, coral marks captures, and violet traces the last move. A bar entry and bearing-off destination use matching frames. The board checkers are approximately 5% smaller than in 0.1.0.
 
@@ -45,7 +47,15 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 
 ## Saved progress
 
-Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 4 stores the original dice, consumed slots, and recent rolls, and continues to accept versions 1 through 3; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.5.0 — free die choice, dimmed dice, and roll history
+
+Both die orders and both board directions remain available wherever the custom movement, capture, bar-entry, and maximum dice-use rules permit them. Dice are never automatically selected by side or size. A die can be explicitly chosen for tap, drag, bar-entry, or bearing-off moves. The current roll keeps all its dice in place and dims each consumed die. Undo and reload preserve the correct slots. The previous five pairs are smaller and dimmer beneath the current roll and survive reload.
+
+Dice use browser cryptographic randomness with rejection sampling for equal six-face probabilities. Normal turns accept doubles without rerolling them; opening ties still reroll under the existing opening rule. Results do not depend on scores, positions, computer difficulty, or earlier rolls.
+
+Messages and sounds remain separately switchable on each device. The VENGEANCE handoff stays readable through rapid captures; enabling Messages during VENGEANCE shows it again. Sound settings includes **Test sound**. Trusted click/touch gestures resume iPad audio, including interrupted or recreated audio contexts. Music remains opt-in. Use the current release URL on iPad and desktop: https://mygeorgiaattorney.github.io/war-peace-backgammon/?v=0.5.0
 
 ## Version 0.4.1 — centered, optional game messages
 

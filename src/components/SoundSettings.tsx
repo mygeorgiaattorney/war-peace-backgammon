@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 type Props = {
   open: boolean; onClose: () => void;
   soundEnabled: boolean; onSoundToggle: () => void;
+  onSoundTest: () => void;
   narrationEnabled: boolean; onNarrationToggle: () => void;
   musicEnabled: boolean; onMusicToggle: () => void;
   volume: number; onVolumeChange: (value: number) => void;
@@ -27,10 +28,12 @@ export default function SoundSettings(props: Props) {
       <label>Music volume <span>{Math.round(props.volume * 100)}%</span><input aria-label="Music volume" type="range" min="0" max="60" value={Math.round(props.volume * 100)} onChange={event => props.onVolumeChange(Number(event.target.value) / 100)} /></label>
       <button type="button" aria-pressed={props.soundEnabled} onClick={props.onSoundToggle}>Sound {props.soundEnabled ? 'on' : 'off'}</button>
       <button type="button" aria-pressed={props.narrationEnabled} onClick={props.onNarrationToggle}>Messages {props.narrationEnabled ? 'on' : 'off'}</button>
+      <button type="button" onClick={props.onSoundTest}>Test sound</button>
     </div>
     <p>WAR: drums and low brass. PEACE: solemn minor chords. VENGEANCE: a dark drone and slow heartbeat.</p>
     <p>Music and capture effects have separate switches. Music pauses when you leave the game or hide this tab; tap the game to resume.</p>
     <p>Messages shows or hides the illustrated announcements and turn notices in the center of the board. You can also switch them above the board.</p>
+    <p>These choices are saved separately on each device. Test sound enables effects and unlocks audio on this device.</p>
     <button type="button" onClick={props.onClose}>Done</button>
   </dialog>;
 }

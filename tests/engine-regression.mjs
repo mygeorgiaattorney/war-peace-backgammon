@@ -23,17 +23,20 @@ for (const statement of [...parsedSource.statements].reverse()) {
 const exportNames = [
   'emptyBoard', 'createStartingBoard', 'calculatePipCount', 'allHome',
   'canBearOff', 'getRawMoves', 'analyzeLegality', 'applyMove', 'removeDie',
-  'savedTurnStartedAllHome',
+  'savedTurnStartedAllHome', 'savedDiceDisplay', 'rollDie',
 ];
 const compiled = ts.transpileModule(`${pureSource}\nexport { ${exportNames.join(', ')} };`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 });
 const engineExports = {};
-vm.runInNewContext(compiled.outputText, { exports: engineExports, console }, { filename: 'rule-engine.test.js' });
+const randomSamples = [];
+let randomRequests = 0;
+const crypto = { getRandomValues(array) { randomRequests++; assert.ok(randomSamples.length, 'A random sample must be supplied by this test.'); array[0] = randomSamples.shift(); return array; } };
+vm.runInNewContext(compiled.outputText, { exports: engineExports, console, crypto }, { filename: 'rule-engine.test.js' });
 const {
   emptyBoard, createStartingBoard, calculatePipCount, allHome, canBearOff,
   getRawMoves, analyzeLegality, applyMove, removeDie,
-  savedTurnStartedAllHome,
+  savedTurnStartedAllHome, savedDiceDisplay, rollDie,
 } = engineExports;
 
 function position(white, black, bar = { White: 0, Black: 0 }) {
@@ -392,4 +395,38 @@ test('rule analysis leaves caller state unchanged and produced turns conserve al
     }
   }
   assert.equal(JSON.stringify(state), before);
+});
+
+
+test('either die can lead for both colors regardless of left-right order', () => {
+  for (const player of ['White', 'Black']) for (const mode of ['WAR', 'PEACE']) {
+    const state = player === 'White' ? position({0:1,18:14},{23:15}) : position({0:15},{23:1,5:14});
+    const from = player === 'White' ? 0 : 23, direction = player === 'White' ? 1 : -1;
+    for (const dice of [[6,4],[4,6]]) {
+      const result = analyze(state, player, dice, mode);
+      assert.deepEqual(Array.from(result.legalMoves.filter(move=>move.from===from), move=>move.die).sort(), [4,6]);
+      for (const first of [4,6]) {
+        const move = result.legalMoves.find(move=>move.from===from && move.die===first);
+        const next = applyMove(state.board, move, player, state.bar, state.off);
+        const other = first===4 ? 6 : 4;
+        assert.ok(analyze(next,player,[other],mode,'NORMAL',false).legalMoves.some(move=>move.from===from+direction*first && move.to===from+direction*10));
+      }
+    }
+  }
+});
+
+test('secure dice reject excess samples and map all six faces equally', () => {
+  randomRequests = 0;
+  randomSamples.push(4294967292, 4294967295, 0, 1, 2, 3, 4, 5);
+  assert.deepEqual(Array.from({length:6},()=>rollDie()), [1,2,3,4,5,6]);
+  assert.equal(randomRequests, 8, 'Out-of-range samples are discarded instead of biased modulo mapping.');
+  assert.equal(randomSamples.length,0);
+});
+
+test('used dice restore in their original slots and older saves recover consumed values', () => {
+  const display = value => JSON.parse(JSON.stringify(savedDiceDisplay(value)));
+  assert.deepEqual(display({version:4,rolledDice:[6,4],usedDiceIndices:[1]}), {dice:[6,4],used:[1]});
+  assert.deepEqual(display({version:4,rolledDice:[2,2,2,2],usedDiceIndices:[3,1]}), {dice:[2,2,2,2],used:[3,1]});
+  assert.deepEqual(display({version:2,openingDice:null,turnMoveCount:1,moveLog:[{move:{die:6}}],remainingDice:[4]}), {dice:[6,4],used:[0]});
+  assert.deepEqual(display({version:3,openingDice:[4,6],turnMoveCount:1,moveLog:[{move:{die:6}}],remainingDice:[4]}), {dice:[4,6],used:[1]});
 });
