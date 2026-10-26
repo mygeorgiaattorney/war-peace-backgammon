@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import RuleExamples from "./RuleExamples";
 import "./game-info.css";
 
 export type RulesDialogProps = {
@@ -7,7 +8,7 @@ export type RulesDialogProps = {
   onClose: () => void;
 };
 
-const tabs = ["Overview", "Core Rules", "Strategy"] as const;
+const tabs = ["Overview", "Watch the rules", "Core Rules", "Strategy"] as const;
 type RulesTab = (typeof tabs)[number];
 
 export default function RulesDialog({ open, onClose }: RulesDialogProps) {
@@ -113,6 +114,7 @@ export default function RulesDialog({ open, onClose }: RulesDialogProps) {
             hidden={tab !== label}
           >
             {label === "Overview" && <Overview />}
+            {label === "Watch the rules" && <RuleExamples />}
             {label === "Core Rules" && <CoreRules />}
             {label === "Strategy" && <Strategy />}
           </section>
@@ -172,8 +174,8 @@ function CoreRules() {
         <p>First use as many dice as possible. Among those complete turns, WAR requires the most captures and PEACE requires the fewest. If all your checkers were already home when this turn began, next maximize the number borne off. In WAR, capturing takes priority over bearing off.</p>
       </li>
       <li>
-        <h3>Enemy Control</h3>
-        <p>An unavoidable PEACE capture gives your opponent control of your checkers for the rest of that turn. They choose the remaining legal moves using your unused dice. WAR/PEACE priorities are suspended, but ordinary movement and dice-use rules still apply. There is no extra roll.</p>
+        <h3>VENGEANCE — Enemy Control</h3>
+        <p>The PEACE capture happens first. The victim then commands the capturing player’s checkers using that turn’s unused dice: VENGEANCE. They may choose any ordinary legal moves that maximize dice use; capture and bearing-off priorities are suspended. The checkers keep their colors. The victim does not move their own checkers or bring their own prisoner back in. There is no extra roll. If no playable moves remain, there is no borrowed move.</p>
       </li>
       <li>
         <h3>Doubles and blocked turns</h3>

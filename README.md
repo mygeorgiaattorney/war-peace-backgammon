@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.2.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.3.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -46,6 +46,12 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 ## Saved progress
 
 Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 3 continues to accept versions 1 and 2; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.3.0 — October 26 iPad presentation
+
+The approved design is now part of the playable game: a 4:3 board with controls beneath it, automatic height fitting after rotation, separated dimensional checkers, red WAR and blue PEACE tables, and a dark violet VENGEANCE table for useful borrowed moves. **Sound** in the header opens separate music, effects, and narration controls. Music starts only after a gesture and pauses when the tab is hidden. **How to play → Watch the rules** contains 26 interactive example states. Existing saves and local player records remain compatible.
+
+Verified with 36 engine/strategy regressions, 27 Chromium browser scenarios with touch enabled, 15 layout checks across WAR/PEACE/VENGEANCE, and a real browser touch move. Actual iPad speaker output remains a device check.
 
 ## Version 0.2.0 — October 25 playtest update
 

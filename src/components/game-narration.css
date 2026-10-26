@@ -33,3 +33,5 @@
   .narration-copy p { font-size:11px; }
 }
 @media(prefers-reduced-motion:reduce) { .game-narration { animation:none; } }
+
+.narration-vengeance { --narration-accent:#d0a5ff; background:linear-gradient(115deg,#3b1645f8,#10101cfb 75%); box-shadow:0 0 28px #9b36b15c,0 12px 40px #000a; }
