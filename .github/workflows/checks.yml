@@ -28,6 +28,7 @@ jobs:
       - name: Check messages and responsive game interface
         env:
           BACKGAMMON_TEST_URL: http://127.0.0.1:4173/war-peace-backgammon/
+          BACKGAMMON_SCREENSHOT_DIRECTORY: /tmp/backgammon-browser-regression
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/backgammon-preview.log" 2>&1 &
           preview_pid=$!
@@ -37,3 +38,11 @@ jobs:
             sleep 1
           done
           npm run test:browser
+      - name: Save interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-interface-checks
+          path: /tmp/backgammon-browser-regression
+          if-no-files-found: ignore
+          retention-days: 7

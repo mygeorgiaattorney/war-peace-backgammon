@@ -64,6 +64,7 @@ const button = (page, name) => page.getByRole('button', { name, exact: true });
 
 async function soundSettings(page, action) {
   await button(page, 'Sound').click();
+  await page.getByRole('dialog', { name: 'Sound & messages', exact: true }).waitFor({ state: 'visible' });
   await action();
   await button(page, 'Close sound settings').click();
 }
@@ -434,6 +435,10 @@ register('centered game messages have a visible toggle and remember the off sett
     assert.match(await page.getByTestId('game-narration').innerText(), /Prisoner of War/);
     await centeredMessage('[data-testid="game-narration"]');
     assert.equal(await page.locator('.turn-toast').count(), 0, 'Only one message appears at a time.');
+    if (process.env.BACKGAMMON_SCREENSHOT_DIRECTORY) {
+      fs.mkdirSync(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY, `centered-messages-${viewport.width}x${viewport.height}.png`), fullPage: true });
+    }
   }
   await button(page, 'Dismiss game narration').click();
   assert.equal(await page.getByTestId('game-narration').count(), 0);
@@ -442,12 +447,12 @@ register('centered game messages have a visible toggle and remember the off sett
   await loadFixture(page, capture('WAR'));
   assert.equal(await button(page, 'Messages off').getAttribute('aria-pressed'), 'false');
   assert.equal(await page.locator('.turn-toast').count(), 0, 'The preference also hides ordinary turn notices after reload.');
-  await soundSettings(page, async () => assert.equal(await button(page, 'Messages off').isVisible(), true));
+  await soundSettings(page, async () => assert.equal(await page.getByRole('dialog').getByRole('button', { name: 'Messages off', exact: true }).isVisible(), true));
   await point(page, 0).click();
   await point(page, 1).click();
   await waitSaved(page, s => s.bar.Black === 1);
   assert.equal(await page.getByTestId('game-narration').count(), 0);
-  await soundSettings(page, async () => { await button(page, 'Messages off').click(); });
+  await soundSettings(page, async () => { await page.getByRole('dialog').getByRole('button', { name: 'Messages off', exact: true }).click(); });
   assert.equal(await button(page, 'Messages on').getAttribute('aria-pressed'), 'true');
   await loadFixture(page, makeSave({ white: { 4: 14 }, black: { 0: 1, 1: 2, 2: 1 }, bar: { White: 1, Black: 0 }, remainingDice: [1, 2], mode: 'PEACE' }));
   await point(page, 0).click();
