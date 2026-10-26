@@ -9,12 +9,15 @@
 .roll-history ol { display:grid; gap:3px; justify-items:center; margin:6px 0 0; padding:0; list-style:none; }
 .roll-history li { display:grid; grid-template-columns:48px auto; align-items:center; gap:7px; min-height:18px; color:#c8bda9; opacity:.55; }
 .roll-history-player { text-align:left; font-size:9px; }
+.history-player-short { display:none; }
 .roll-history-pair { display:flex; gap:5px; }
 .history-die { width:18px; height:18px; padding:3px; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:1px; border:1px solid #ad9a74; border-radius:3px; }
 @media(max-height:700px) and (min-width:800px) {
   .dice-help { font-size:9px; margin-top:3px; }
   .roll-history { margin-top:5px; padding-top:4px; }
-  .roll-history ol { margin-top:4px; gap:2px; }
-  .roll-history li { min-height:14px; }
+  .roll-history ol { margin-top:4px; gap:3px 6px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .roll-history li { min-height:14px; grid-template-columns:10px auto; gap:3px; }
+  .history-player-full { display:none; }
+  .history-player-short { display:inline; }
   .history-die { width:14px; height:14px; padding:2px; }
 }

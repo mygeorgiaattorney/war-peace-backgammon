@@ -43,10 +43,10 @@ export default function DicePanel(props: Props) {
     {props.dice.length > 0 && !props.opening && <p className="dice-help">
       {props.used.length === props.dice.length ? "Roll complete" : props.selected === null ? "Either die first" : `Using ${props.dice[props.selected]} · tap again for either`}
     </p>}
-    {previous.length > 0 && <section className="roll-history" aria-label="Previous five rolls" data-testid="roll-history">
-      <span className="console-label">PREVIOUS ROLLS · NEWEST FIRST</span>
+    {previous.length > 0 && <section className="roll-history" aria-label="Previous five rolls, newest first" title="Newest roll first" data-testid="roll-history">
+      <span className="console-label">PREVIOUS ROLLS</span>
       <ol>{previous.map(roll => <li key={roll.id} aria-label={`${roll.opening ? "Opening" : roll.player} rolled ${roll.dice[0]} and ${roll.dice[1]}`}>
-        <span className="roll-history-player">{roll.opening ? "Opening" : roll.player}</span>
+        <span className="roll-history-player"><span className="history-player-full">{roll.opening ? "Opening" : roll.player}</span><span className="history-player-short" aria-hidden="true">{roll.opening ? "O" : roll.player[0]}</span></span>
         <span className="roll-history-pair" aria-hidden="true">{roll.dice.map((value, index) =>
           <span key={index} className={"history-die " + ((roll.opening ? index === 0 : roll.player === "White") ? "die-light" : "die-dark")}>{pips(value)}</span>
         )}</span>

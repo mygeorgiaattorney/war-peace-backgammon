@@ -91,3 +91,15 @@ body:has(.theme-vengeance) { background:radial-gradient(ellipse at 50% 0%,#26102
  .sound-options { grid-template-columns:1fr; }
 }
 @media(prefers-reduced-motion:reduce) { .vengeance-sweep .board-frame { animation:none; } }
+@media(max-height:700px) and (min-width:800px) and (min-aspect-ratio:6/5) {
+ .table-toolbar { gap:3px; padding-top:6px; }
+ .table-toolbar .mode-badge { min-height:44px; }
+ .table-toolbar .turn-summary strong { font-size:12px; }
+ .table-toolbar .turn-summary small { font-size:10px; }
+ .table-toolbar .pip-summary { padding:0 0 3px; }
+ .game-console { gap:4px; padding-top:5px; padding-bottom:6px; }
+ .game-console .dice-panel .dice-row { gap:6px; padding:2px 0; }
+ .game-console .dice-panel .console-label { font-size:9px; }
+ .game-console .roll-history .console-label { font-size:7px; }
+ .game-console .game-status { padding:3px 2px; }
+}

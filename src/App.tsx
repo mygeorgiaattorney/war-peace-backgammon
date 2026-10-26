@@ -1699,7 +1699,7 @@ export default function App() {
     setTimeout(() => setAnimatingMoveKey(null), 420);
   }
 
-  function flashBanner(text: string, duration = 1300): void {
+  function flashBanner(text: string, duration = 2200): void {
     if (!narrationEnabled) return;
     if (bannerTimerRef.current !== null) clearTimeout(bannerTimerRef.current);
     setTurnBanner(text);
@@ -1799,7 +1799,7 @@ export default function App() {
       setSaveAvailable(true);
       if (announce) {
         setMessage("Progress saved on this device.");
-        flashBanner("GAME SAVED", 900);
+        flashBanner("GAME SAVED", 1800);
       }
     } catch {
       setSaveAvailable(false);
@@ -1955,7 +1955,7 @@ export default function App() {
       setLegalHelpActive(false);
       setAssistSourcePoint(null);
       setHasSavedGame(true);
-      flashBanner("GAME LOADED", 900);
+      flashBanner("GAME LOADED", 1800);
     } catch {
       removeStoredValue(SAVE_KEY);
       setHasSavedGame(false);
@@ -3664,7 +3664,7 @@ export default function App() {
   const humanCanAct = !isComputerController && !autoTestRunning && !diceRolling && !confirmResign;
   const canChooseHere = canChooseDoctrine && humanCanAct;
   const statusText = winner && finalResult ? formatFinalResult(finalResult) :
-    diceRolling ? "Rolling dice…" : vengeanceActive ? `ALL MOVES: ${controller} (opponent). ${remainingDice.length === 0 || legalMoves.length === 0 ? "Roll complete — end turn." : "At least one capture; extra captures optional."}` : isComputerController ? "Computer is thinking…" :
+    diceRolling ? "Rolling dice…" : vengeanceActive ? `${controller}: ALL MOVES. ${remainingDice.length === 0 || legalMoves.length === 0 ? "Roll complete — end turn." : "At least one capture; extras optional."}` : isComputerController ? "Computer is thinking…" :
     canChooseHere ? "You won the opening roll. Choose WAR or PEACE." : message;
 
   return (

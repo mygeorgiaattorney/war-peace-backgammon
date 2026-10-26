@@ -417,6 +417,11 @@ register('full-point frames distinguish legal sources, selected destination, and
 register('centered game messages have a visible toggle and remember the off setting', async page => {
   const capture = mode => makeSave({ white: { 0: 1, 18: 14 }, black: { 1: 1, 5: 14 }, remainingDice: [1], mode });
   async function centeredMessage(selector) {
+    await page.locator(selector).waitFor({state:'visible'});
+    const initial = await page.locator(selector).evaluate(node => {
+      const m=node.getBoundingClientRect(),b=node.closest('[data-testid="board"]').getBoundingClientRect();
+      return {message:{x:m.x,y:m.y,width:m.width,height:m.height},board:{x:b.x,y:b.y,width:b.width,height:b.height}};
+    });
     await page.waitForFunction(selector => {
       const message = document.querySelector(selector);
       const board = message?.closest('[data-testid="board"]');
@@ -425,7 +430,7 @@ register('centered game messages have a visible toggle and remember the off sett
       return Math.abs(m.left + m.width / 2 - b.left - b.width / 2) < 1 &&
         Math.abs(m.top + m.height / 2 - b.top - b.height / 2) < 1 &&
         m.left >= b.left && m.right <= b.right && m.top >= b.top && m.bottom <= b.bottom;
-    }, selector);
+    }, selector).catch(error => { throw new Error(`${error.message}; initial geometry=${JSON.stringify(initial)}`); });
   }
   for (const viewport of [{width:1366,height:900}, {width:1024,height:768}, {width:912,height:590}, {width:768,height:1024}, {width:390,height:844}]) {
     await page.setViewportSize(viewport);
@@ -779,10 +784,10 @@ register('free dice choice supports smaller larger left and right first for both
     assert.ok(opacity<.4,'A consumed die is visibly dim.');
     await point(page,from+direction*first).click(); await point(page,from+direction*10).click();
     await waitSaved(page,state=>state.remainingDice.length===0);
-    assert.equal(await dice.locator('[data-used="true"]').count(),2);
+    assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="true"]').count(),2);
     await button(page,'Undo move').click();
     await waitSaved(page,state=>state.remainingDice.length===1);
-    assert.equal(await dice.locator('[data-used="true"]').count(),1);
+    assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="true"]').count(),1);
   }
 });
 
@@ -801,15 +806,15 @@ register('used doubles keep their exact slots through undo and reload', async pa
   await page.reload({waitUntil:'networkidle'}); await button(page,'Continue saved game').click();
   assert.equal(await dice.count(),4);
   assert.equal(await dice.nth(1).getAttribute('data-used'),'true');
-  assert.equal(await dice.locator('[data-used="false"]').count(),3);
+  assert.equal(await page.getByTestId('dice').locator('.game-die[data-used="false"]').count(),3);
 });
 
 register('a selected die controls ambiguous bearing off without a higher die preference', async page => {
   for(const roll of [[1,6],[6,1]]) for(const value of [1,6]) {
-    await loadFixture(page,makeSave({white:{18:13,23:2},black:{0:15},remainingDice:roll}));
+    await loadFixture(page,makeSave({white:{23:2},black:{0:15},remainingDice:roll}));
     await page.getByTestId('dice').locator('.game-die').nth(roll.indexOf(value)).click();
     await point(page,23).click(); await page.locator('[data-bear-off-player="White"]').click();
-    const state=await waitSaved(page,state=>state.off.White===1);
+    const state=await waitSaved(page,state=>state.off.White===14);
     assert.equal(state.moveLog.at(-1).move.die,value);
     assert.deepEqual(state.remainingDice,[value===1?6:1]);
     assert.equal(await page.getByTestId('bear-off-choice').count(),0);
@@ -825,6 +830,8 @@ register('previous five rolls stay small and dim and persist without being chang
   const list=page.getByTestId('roll-history');
   assert.equal(await list.locator('li').count(),5);
   assert.match(await list.locator('li').first().getAttribute('aria-label'),/4 and 5/);
+  for(const doubles of [false,true]) {
+    await loadFixture(page,doubles ? makeSave({white:{1:1,18:14},black:{3:1,5:1,7:1},bar:{White:0,Black:1},version:4,mode:'PEACE',controlState:'ENEMY_CONTROL',controller:'Black',remainingDice:[2,2,2],rolledDice:[2,2,2,2],usedDiceIndices:[0],rollHistory:history.map((roll,index)=>index===5?{...roll,dice:[2,2]}:roll),turnMoveCount:1,moveLog:[{id:1,player:'White',mode:'PEACE',controlState:'ENEMY_CONTROL',controller:'Black',move:{from:-1,to:1,die:2,isHit:true,isBarEntry:true},remainingDiceAfter:[2,2,2]}]}) : fixture);
   for(const viewport of [{width:1366,height:900},{width:1024,height:768},{width:912,height:590},{width:768,height:1024},{width:390,height:844}]) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(200);
@@ -832,8 +839,10 @@ register('previous five rolls stay small and dim and persist without being chang
     if(viewport.width>=800) assert.ok(await page.locator('.game-console').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight+1),'Current dice, history and controls fit the landscape screen.');
     const sizes=await page.evaluate(()=>({current:document.querySelector('.game-die').getBoundingClientRect().width,history:document.querySelector('.history-die').getBoundingClientRect().width}));
     assert.ok(sizes.history<sizes.current/2);
-    if(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY) await page.screenshot({path:path.join(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY,`dice-history-${viewport.width}x${viewport.height}.png`),fullPage:true});
+    if(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY) await page.screenshot({path:path.join(process.env.BACKGAMMON_SCREENSHOT_DIRECTORY,`dice-history-${doubles?'doubles-':''}${viewport.width}x${viewport.height}.png`),fullPage:true});
   }
+  }
+  await loadFixture(page,fixture);
   await page.setViewportSize({width:1024,height:768});
   await queueDice(page,[2,5]);
   await point(page,6).click(); await point(page,10).click();
