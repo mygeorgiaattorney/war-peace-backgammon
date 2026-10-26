@@ -471,7 +471,8 @@ register('centered game messages have a visible toggle and remember the off sett
   await button(page, 'Messages on').click();
   assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching off dismisses the current message immediately.');
   await button(page, 'Messages off').click();
-  assert.equal(await page.getByTestId('game-narration').count(), 0, 'Switching on does not replay dismissed messages.');
+  await page.getByTestId('game-narration').waitFor({ state: 'visible' });
+  assert.match(await page.getByTestId('game-narration').innerText(), /VENGEANCE — ALL MOVES/, 'Switching on explains the active VENGEANCE turn.');
 });
 
 register('malformed saved player names and opening dice are rejected without breaking the menu', async page => {
