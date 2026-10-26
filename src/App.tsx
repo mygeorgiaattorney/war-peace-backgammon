@@ -3617,13 +3617,6 @@ export default function App() {
             <div><h1>War <span>&amp;</span> Peace</h1><p>BACKGAMMON</p></div>
           </div>
           <p className="game-opponent">{playSetupMode === "TWO_PLAYERS" ? "Two players · pass & play" : playSetupMode === "COMPUTER_AGGRESSIVE" ? "Computer 2 · Aggressive" : "Computer 1 · Balanced"}</p>
-          <nav className="game-nav" aria-label="Game navigation">
-            <button type="button" onClick={() => setShowRules(true)}>How to play</button>
-            <button type="button" onClick={() => setShowSoundSettings(true)}>Sound</button>
-            <button type="button" onClick={backToGameMenu}>Menu</button>
-          </nav>
-        </header>
-
         {canEditPlayers && <section className="player-setup" aria-label="Player names">
           <label><span className="tiny-checker checker-light" aria-hidden="true" />White
             <input aria-label="White player name" maxLength={30} value={whitePlayerName} onChange={(event) => setWhitePlayerName(event.target.value)} />
@@ -3632,6 +3625,14 @@ export default function App() {
             <input aria-label="Black player name" maxLength={30} value={blackPlayerName} disabled={isComputerGame} onChange={(event) => setBlackPlayerName(event.target.value)} />
           </label>
         </section>}
+          <nav className="game-nav" aria-label="Game navigation">
+            <button type="button" onClick={() => setShowRules(true)}>How to play</button>
+            <button type="button" onClick={() => setShowSoundSettings(true)}>Sound</button>
+            <button type="button" onClick={backToGameMenu}>Menu</button>
+          </nav>
+        </header>
+
+
 
         <section className="game-layout" aria-label="Backgammon table">
           <div className="table-toolbar">
@@ -3710,7 +3711,7 @@ export default function App() {
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
         </details>
-        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.3.0</span></footer>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.3.1</span></footer>
         </div>
 
         {showRecords && <section className="records-panel">

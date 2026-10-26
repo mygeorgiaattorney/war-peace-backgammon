@@ -2,9 +2,15 @@
 
 - **Last reviewed:** October 26, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.3.0 — October 26, 2026
+- **Released version:** 0.3.1 — October 26, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.3.1 — iPad size correction
+
+Richard’s actual iPad/Messenger screenshot showed excessive side margins in 0.3.0. Landscape now uses a narrow right strip for mode, turn, pips, dice and actions, instead of stacking them above/below and shrinking the whole table. Player-name entry shares the header. Height fitting measures the board and essential controls, permitting optional help/footer below the fold. It uses the layout viewport and ignores focused text entry and pinch-zoom. Tablet landscape has a larger minimum usable table width; portrait retains the lower control strip. Existing save data, records, sound and rules remain compatible.
+
+Verification includes the existing gameplay scenarios, minimum landscape board/surface widths, the 912×590 Messenger-sized viewport, keyboard/pinch viewport changes, and Chromium/WebKit rotation checks. Layout inspection covers 18 combinations across WAR, PEACE and VENGEANCE plus a real browser touch move. Physical-device confirmation remains with Richard.
 
 ## Version 0.3.0 — iPad presentation
 
