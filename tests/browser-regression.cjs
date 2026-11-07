@@ -357,6 +357,56 @@ register('PEACE cannot choose a quiet partial turn or end before a remaining pla
   assert.equal(await button(page, 'End turn').isEnabled(), true);
 });
 
+register('WAR captures take priority over using both dice and allow ending with a blocked die', async page => {
+  for (const player of ['White', 'Black']) {
+    await loadFixture(page, makeSave({
+      white: player === 'White' ? { 0: 1, 5: 1 } : { 21: 2, 17: 1, 16: 2, 15: 2 },
+      black: player === 'White' ? { 2: 2, 6: 1, 7: 2, 8: 2 } : { 23: 1, 18: 1 },
+      currentPlayer: player, controller: player, remainingDice: [2, 1], mode: 'WAR',
+    }));
+    const from = player === 'White' ? 5 : 18;
+    const to = player === 'White' ? 6 : 17;
+    const quietFrom = player === 'White' ? 0 : 23;
+    const victim = player === 'White' ? 'Black' : 'White';
+    assert.equal(await point(page, quietFrom).getAttribute('data-legal-origin'), 'false');
+    assert.equal(await button(page, 'End turn').isDisabled(), true);
+    await point(page, from).tap();
+    assert.equal(await point(page, to).getAttribute('data-legal-destination'), 'true');
+    await point(page, to).tap();
+    const captured = await waitSaved(page, state => state.bar[victim] === 1);
+    assert.deepEqual(captured.remainingDice, [2]);
+    assert.equal(captured.moveLog.length, 1);
+    assert.equal(await button(page, 'End turn').isEnabled(), true);
+    await button(page, 'Undo move').click();
+    await waitSaved(page, state => state.bar[victim] === 0);
+    assert.equal(await point(page, quietFrom).getAttribute('data-legal-origin'), 'false');
+    await point(page, from).tap();
+    await point(page, to).tap();
+    await waitSaved(page, state => state.bar[victim] === 1);
+    await page.reload({ waitUntil: 'networkidle' });
+    await button(page, 'Continue saved game').click();
+    assert.equal(await button(page, 'End turn').isEnabled(), true);
+    assert.deepEqual((await saved(page)).remainingDice, [2]);
+  }
+});
+
+register('PEACE doubles retain all four moves and opponent control through the final forced capture', async page => {
+  await loadFixture(page, makeSave({ white: { 0: 1 }, black: { 4: 1 }, remainingDice: [1, 1, 1, 1], mode: 'PEACE' }));
+  for (let step = 0; step < 4; step++) {
+    const state = await waitSaved(page, state => state.turnMoveCount === step && state.controller === 'Black');
+    assert.equal(state.controlState, 'ENEMY_CONTROL');
+    assert.equal(state.remainingDice.length, 4 - step);
+    assert.equal(await button(page, 'End turn').isDisabled(), true);
+    await point(page, step).tap();
+    await point(page, step + 1).tap();
+    await waitSaved(page, state => state.turnMoveCount === step + 1);
+  }
+  const complete = await saved(page);
+  assert.equal(complete.bar.Black, 1);
+  assert.deepEqual(complete.remainingDice, []);
+  assert.equal(await button(page, 'End turn').isEnabled(), true);
+});
+
 register('ambiguous bearing-off lets the human choose either die for tray taps, drags, and repeated source taps', async page => {
   const fixture = () => makeSave({ white: { 23: 2 }, black: { 0: 15 }, remainingDice: [4, 6] });
   for (const input of ['tray', 'drag', 'source']) {

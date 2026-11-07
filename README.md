@@ -4,7 +4,7 @@ A browser backgammon game in which playable doubles switch the rules between **W
 
 **[Open the game](https://mygeorgiaattorney.github.io/war-peace-backgammon/)** · **[Project status and remaining work](docs/PROJECT_STATUS.md)**
 
-Current version: **0.5.0**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
+Current version: **0.5.1**. The [project status](docs/PROJECT_STATUS.md) records the release history, verification results, and remaining device checks.
 
 ## Play
 
@@ -31,8 +31,8 @@ Full frames identify the moves: gold dashes mark playable sources, an ivory fram
 ## The rules that distinguish this game
 
 1. **Opening:** Each player rolls one die; ties are rerolled. The higher roller chooses WAR or PEACE and moves first using those two opening dice.
-2. **Dice use comes first:** Use the maximum number of moves possible, even when completing the turn requires a PEACE capture. Either die may be played first when that order satisfies the rules. There is no separate higher-die preference, including when only one die can be used. Doubles provide four moves, all of which must be used when possible.
-3. **WAR:** Among the sequences satisfying the dice-use rules, choose a sequence with the greatest number of captures.
+2. **Dice use depends on the mode:** PEACE and VENGEANCE must use the maximum number of playable dice, even when completing the turn requires a capture. WAR maximizes captures first, then dice use among turns with that maximum. Either die may be played first when that order satisfies these priorities. There is no separate higher-die preference. Doubles provide four moves, subject to the same priorities.
+3. **WAR:** Choose a sequence with the greatest number of captures, even when this leaves a die unusable and a quieter turn could use both. Among turns with the same maximum captures, use the most dice, then apply any turn-start bearing-off priority. A capture does not permit skipping a remaining legal move.
 4. **PEACE:** Among the turns using the maximum number of moves, choose the fewest captures. A quiet move that strands a playable die is not permitted when a complete turn exists. If every complete turn requires a capture, the opponent instead makes ALL moves using that roll (VENGEANCE). They may choose the minimum capture or additional captures where legal; they cannot choose a zero-capture or shorter turn.
 5. **Bearing-off priority:** If every remaining checker was already home and the bar empty when this turn began, maximize bearing off after satisfying the WAR/PEACE capture priority. In WAR, captures take priority over extra bear-offs. If the last outside checker comes home during the turn, bearing off becomes possible but maximizing bear-offs is optional until the next turn. Ordinary exact-die and oversized-die restrictions still apply.
 6. **Enemy Control:** When no complete quiet PEACE turn exists, the opponent makes ALL moves with the rolling player's checkers using only the rolled dice. This includes quiet moves preceding a later capture. They may choose the minimum or additional captures where legal. There is no extra roll. WAR/PEACE and bearing-off priorities are suspended during Enemy Control, while ordinary movement and maximum move use remain in force.
@@ -48,6 +48,10 @@ The implemented rules live in [src/App.tsx](src/App.tsx), and computer evaluatio
 ## Saved progress
 
 Game progress, player records, sound and narration preferences, and diagnostic reports use the current browser's local storage. Saved progress includes the game position, selected opponent, player names, and whether all checkers were home at the start of the current turn. That rule condition survives undo and reload. Save format 4 stores the original dice, consumed slots, and recent rolls, and continues to accept versions 1 through 3; old saves infer the condition from the current turn's move history. These records do not automatically transfer between devices or browsers. Clearing this site's browser data removes them. The menu offers **Continue saved game** when a resumable game is available.
+
+## Version 0.5.1 — WAR captures before dice use
+
+PEACE keeps its absolute maximum-dice rule: a shorter quiet turn cannot avoid a capture required by a longer turn. VENGEANCE still gives the opponent the entire roll and requires every playable die. WAR now maximizes captures across all possible turns before maximizing dice use. Previously, a longer quiet turn could incorrectly suppress a shorter capturing turn. Rules, the introduction, and the illustrated WAR lesson now explain the different priorities. The game uses the same engine for human and computer players.
 
 ## Version 0.5.0 — free die choice, dimmed dice, and roll history
 

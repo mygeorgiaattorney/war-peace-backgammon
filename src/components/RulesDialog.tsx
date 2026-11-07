@@ -136,7 +136,7 @@ function Overview() {
         <article className="wp-rule-card">
           <span className="wp-mode-label wp-mode-war">WAR</span>
           <h3>Attack is compulsory.</h3>
-          <p>Among the legal ways to use your dice, take the route that captures the most opposing checkers.</p>
+          <p>Capture the most opposing checkers, even if that leaves a die unplayable. Among equally destructive turns, use as many dice as possible.</p>
         </article>
         <article className="wp-rule-card">
           <span className="wp-mode-label wp-mode-peace">PEACE</span>
@@ -163,7 +163,7 @@ function CoreRules() {
       </li>
       <li>
         <h3>Use your dice</h3>
-        <p>Use the maximum number of dice that the position allows, in either order. There is no higher-die preference. You cannot choose a shorter turn to avoid a PEACE capture. Doubles provide four moves of the same value, and you must use all four when possible.</p>
+        <p>In PEACE, use the maximum number of dice that the position allows, even if this forces a capture. In WAR, maximize captures first, then use as many dice as possible without reducing those captures. There is no higher-die preference. Doubles provide four moves of the same value, subject to these mode priorities.</p>
         <p>You may use either die first, regardless of which side it appears on. Move a checker directly, or tap an available die to show its moves; tap it again to show both. Used dice stay in place and dim. The five previous rolls appear beneath the current roll, newest first.</p>
         <p>Dice use the browser’s secure random-number generator with equal chances for all six faces. Ordinary rolls are accepted as rolled, including doubles. Opening ties are rerolled.</p>
       </li>
@@ -173,7 +173,8 @@ function CoreRules() {
       </li>
       <li>
         <h3>WAR and PEACE priorities</h3>
-        <p>First use as many dice as possible. Among those complete turns, WAR requires the most captures. PEACE requires a quiet complete turn if one exists. If every complete turn captures, VENGEANCE gives all moves to the opponent, who may choose the minimum or additional captures. If all your checkers were already home when this turn began, next maximize the number borne off. In WAR, capturing takes priority over bearing off.</p>
+        <p>PEACE puts using every playable die first: you cannot choose a shorter quiet turn if using both dice requires a capture. If every complete turn captures, VENGEANCE gives all moves to the opponent, who may choose the minimum or additional captures while still using every playable die. Peaceful intentions can have unintended consequences.</p>
+        <p>WAR puts destruction first: maximize captures even when doing so loses a move. Among turns with the most captures, use the maximum number of dice. If all your checkers were already home when this turn began, next maximize the number borne off. Captures take priority over both dice use and bearing off.</p>
       </li>
       <li>
         <h3>VENGEANCE — Enemy Control</h3>

@@ -61,7 +61,7 @@ export default function GameIntro({
           <div className="wp-doctrines">
             <div>
               <span className="wp-mode-label wp-mode-war">WAR</span>
-              <p>Capture when the rules demand it.</p>
+              <p>Maximize captures—even at the cost of a move.</p>
             </div>
             <div>
               <span className="wp-mode-label wp-mode-peace">PEACE</span>
@@ -71,7 +71,7 @@ export default function GameIntro({
           <p className="wp-intro-description">
             Playable doubles switch the mode. In PEACE, an exposed checker can become a
             land mine: make a capture unavoidable and control ALL moves in that roll,
-            including quiet moves before the capture. Every playable die must be used—even when that breaks the peace.
+            including quiet moves before the capture. In PEACE, every playable die must be used—even when that breaks the peace.
           </p>
           <button className="wp-text-button wp-learn-button" type="button" onClick={onShowRules}>
             How to play <span aria-hidden="true">↗</span>

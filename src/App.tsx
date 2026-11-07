@@ -881,7 +881,7 @@ function filterByMaximumMoves(sequences: Sequence[]): Sequence[] {
   return sequences.filter((sequence) => sequence.moves.length === maxMovesUsed);
 }
 
-function filterByWarPeace(
+function filterByPeaceAndBearOff(
   sequences: Sequence[],
   mode: Mode,
   controlState: ControlState,
@@ -895,28 +895,16 @@ function filterByWarPeace(
     return sequences;
   }
 
-  if (mode === "WAR") {
-    const maxHits = Math.max(...sequences.map((sequence) => sequence.totalHits));
-    let best = sequences.filter((sequence) => sequence.totalHits === maxHits);
-
-    if (maxHits > 0) explanation.push(`WAR requires maximum hitting: ${maxHits} hit(s).`);
-
-    if (bearOffPriorityAtTurnStart) {
-      const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
-      best = best.filter((sequence) => sequence.totalBearOffs === maxBearOffs);
-      if (maxBearOffs > 0) explanation.push(`All checkers started home: maximize bearing off (${maxBearOffs}).`);
-    }
-    return best;
+  let best = sequences;
+  if (mode === "PEACE") {
+    const minHits = Math.min(...best.map((sequence) => sequence.totalHits));
+    best = best.filter((sequence) => sequence.totalHits === minHits);
+    explanation.push(
+      minHits === 0
+        ? "PEACE avoids captures among turns that use every playable die."
+        : `Use every playable die, even in PEACE: ${minHits} unavoidable capture(s).`
+    );
   }
-
-  const minHits = Math.min(...sequences.map((sequence) => sequence.totalHits));
-  let best = sequences.filter((sequence) => sequence.totalHits === minHits);
-
-  explanation.push(
-    minHits === 0
-      ? "PEACE avoids captures among turns that use every playable die."
-      : `Use every playable die, even in PEACE: ${minHits} unavoidable capture(s).`
-  );
 
   if (bearOffPriorityAtTurnStart) {
     const maxBearOffs = Math.max(...best.map((sequence) => sequence.totalBearOffs));
@@ -974,15 +962,25 @@ function analyzeLegality(
 
   if (bar[player] > 0) explanation.push(`${player} must enter from the bar before moving other checkers.`);
 
-  let best = filterByMaximumMoves(generated);
+  let best = generated;
+  // WAR puts captures ahead of dice use. PEACE and VENGEANCE put dice use
+  // first, even when a shorter turn could avoid a capture.
+  const warCapturePriority = mode === "WAR" && controlState !== "ENEMY_CONTROL";
+  if (warCapturePriority) {
+    const maxHits = Math.max(...best.map((sequence) => sequence.totalHits));
+    best = best.filter((sequence) => sequence.totalHits === maxHits);
+    explanation.push(`WAR maximizes captures before dice use: ${maxHits} hit(s), even if a die becomes unplayable.`);
+  }
+  best = filterByMaximumMoves(best);
   const maxMovesUsed = Math.max(...best.map((sequence) => sequence.moves.length));
-  explanation.push(`Maximum dice-use rule: ${maxMovesUsed} move(s) available.`);
+  explanation.push(warCapturePriority
+    ? `After maximizing WAR captures, use as many dice as possible: ${maxMovesUsed} move(s).`
+    : `Maximum dice-use rule: ${maxMovesUsed} move(s) available.`);
 
-  // Assign the entire turn before capture/bear-off priorities are applied.
+  // In PEACE, assign the entire roll before quiet-turn/bear-off filtering.
   const effectiveControl: ControlState = controlState === "ENEMY_CONTROL" ||
     (mode === "PEACE" && best.every(sequence => sequence.totalHits > 0)) ? "ENEMY_CONTROL" : "NORMAL";
-  best = filterByWarPeace(best, mode, effectiveControl, explanation, bearOffPriorityAtTurnStart);
-  best = filterByMaximumMoves(best);
+  best = filterByPeaceAndBearOff(best, mode, effectiveControl, explanation, bearOffPriorityAtTurnStart);
 
   return { controlState: effectiveControl, controller: effectiveControl === "ENEMY_CONTROL" ? opponent(player) : player, legalSequences: best, legalMoves: dedupeFirstMoves(best), explanation };
 }
@@ -3797,7 +3795,7 @@ export default function App() {
           <span><i className="legend-last" aria-hidden="true" />Violet: last move</span>
         </div>
         </details>
-        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.5.0</span></footer>
+        <footer className="game-footer"><span>Tap a source and destination, or drag. Progress saves here.</span><span>White → 24 · Black → 1</span><span className="release-version">v0.5.1</span></footer>
         </div>
 
         {showRecords && <section className="records-panel">
