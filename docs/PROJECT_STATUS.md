@@ -1,10 +1,16 @@
 # Project status — War & Peace Backgammon
 
-- **Last reviewed:** October 26, 2026
+- **Last reviewed:** November 7, 2026
 - **Owner:** Richard Hobbs
-- **Released version:** 0.5.0 — October 26, 2026
+- **Released version:** 0.5.1 — November 7, 2026
 - **Game:** https://mygeorgiaattorney.github.io/war-peace-backgammon/
 - **Repository:** https://github.com/mygeorgiaattorney/war-peace-backgammon
+
+## Version 0.5.1 — distinct WAR and PEACE dice priorities
+
+Richard clarified the priority difference: PEACE must use every playable die, including all four double moves, even when doing so forces a capture. WAR must maximize captures even when that leaves fewer dice playable. Previously the engine filtered every mode to maximum dice use first, which could discard WAR's required shorter capturing turn. WAR now filters all raw terminal turns by maximum captures first, then maximum dice use, then the existing turn-start bearing-off priority. PEACE and VENGEANCE retain maximum dice use first and the whole-roll opponent handoff. A WAR capture never excuses skipping a remaining legal move, and equally destructive turns still use the maximum dice.
+
+Updated the introduction, rules, illustrated WAR lesson, README, and version display. Added regressions for both colors and both die orders, a WAR capture that strands a die despite a quiet two-die alternative, equal-capture turns that must use both dice, forced PEACE captures, all four PEACE double moves, both computer opponents, browser touch/undo/reload, and completion with a blocked die. Local validation: **37 engine and 12 strategy checks passed**, plus TypeScript and production build. Local Chromium cannot start in this execution environment because socket creation is blocked; GitHub checks run the full Chromium suite and focused WebKit coverage, including the new WAR/PEACE cases, before release.
 
 ## Version 0.5.0 — free die choice and retained roll display
 
@@ -60,7 +66,7 @@ The later file `App_warpeace_intro_polish_replacement.tsx`, supplied July 25, 20
 | Capture wording | “Prisoner of War” and “Prisoner of Peace,” replacing “POW! Captured.” |
 | Introduction | Short explanation of WAR/PEACE, playable doubles, PEACE land mines, Enemy Control, and comeback opportunities. |
 | Rules help | Overview, Core Rules, and Strategy tabs, available during play. |
-| Rules priorities | Maximum number of playable moves first, including forced PEACE captures; then WAR maximum captures or PEACE minimum captures. No separate higher-die preference. |
+| Rules priorities | PEACE: maximum playable moves first, even when capture is forced; a complete quiet turn prevents VENGEANCE. WAR: maximum captures first, even at the cost of a move, then maximum dice use among equally destructive turns. VENGEANCE still requires maximum dice use. No separate higher-die preference. |
 | Bearing-off priority | Maximize bear-offs only when all remaining checkers were already home and the bar empty at the start of the turn, after the capture priority. Entering home mid-turn permits bearing off without making it compulsory that turn. WAR captures take priority over extra bear-offs. |
 | Enemy Control | If no complete quiet PEACE turn exists, the opponent controls ALL moves from the start of the roll, using only that roll. At least one capture is compulsory; the opponent may choose the minimum or additional captures where legal. Maximum dice use still applies; capture and bear-off priorities are suspended. |
 | Computer landmines | Both computers consider cautious landmines from 50 through 75 pips behind and stronger landmines beyond 75, accounting for opposing home blocks, open entry points, and exposed checkers. Aggressive accepts more exposure. No-contact races do not use landmine play. |

@@ -140,6 +140,71 @@ test('WAR chooses the full-turn continuation with the most captures', () => {
   assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 2 && sequence.totalHits === 2));
 });
 
+test('WAR must capture even when doing so forfeits a die that a quiet turn could use', () => {
+  for (const player of ['White', 'Black']) {
+    const state = player === 'White'
+      ? position({ 0: 1, 5: 1 }, { 2: 2, 6: 1, 7: 2, 8: 2 })
+      : position({ 21: 2, 17: 1, 16: 2, 15: 2 }, { 23: 1, 18: 1 });
+    const from = player === 'White' ? 5 : 18;
+    const to = player === 'White' ? 6 : 17;
+    for (const dice of [[1, 2], [2, 1]]) {
+      const war = analyze(state, player, dice, 'WAR');
+      assert.deepEqual(moveValues(war.legalMoves), [`${from}>${to}:1`]);
+      assert.ok(war.legalSequences.every(sequence => sequence.totalHits === 1 && sequence.moves.length === 1));
+      const next = applyMove(state.board, war.legalMoves[0], player, state.bar, state.off);
+      assert.equal(analyze(next, player, [2], 'WAR').legalMoves.length, 0);
+      // The same board in PEACE must use both dice and stay quiet.
+      const peace = analyze(state, player, dice, 'PEACE');
+      assert.equal(peace.controlState, 'NORMAL');
+      assert.ok(peace.legalSequences.every(sequence => sequence.totalHits === 0 && sequence.moves.length === 2));
+    }
+  }
+});
+
+test('PEACE uses both dice despite a forced capture, for either color and either die order', () => {
+  for (const player of ['White', 'Black']) {
+    const state = player === 'White'
+      ? position({ 0: 1, 5: 1 }, { 1: 1, 2: 2, 7: 2, 8: 2 })
+      : position({ 22: 1, 21: 2, 16: 2, 15: 2 }, { 23: 1, 18: 1 });
+    for (const dice of [[1, 2], [2, 1]]) {
+      const result = analyze(state, player, dice, 'PEACE');
+      assert.equal(result.controlState, 'ENEMY_CONTROL');
+      assert.equal(result.controller, player === 'White' ? 'Black' : 'White');
+      assert.ok(result.legalSequences.every(sequence => sequence.totalHits === 1 && sequence.moves.length === 2));
+    }
+  }
+});
+
+test('WAR uses both dice when the shorter and longer turns capture the same number', () => {
+  const state = position({ 0: 1, 5: 1 }, { 2: 2, 6: 1, 7: 1, 8: 2 });
+  const shortHit = getRawMoves(state.board, 'White', [1, 2], state.bar, state.off)
+    .find(move => move.from === 5 && move.to === 6);
+  assert.ok(shortHit && shortHit.isHit);
+  const shortNext = applyMove(state.board, shortHit, 'White', state.bar, state.off);
+  assert.equal(getRawMoves(shortNext.board, 'White', [2], shortNext.bar, shortNext.off).length, 0);
+  const result = analyze(state, 'White', [1, 2], 'WAR');
+  assert.ok(result.legalSequences.every(sequence => sequence.totalHits === 1 && sequence.moves.length === 2));
+  assert.ok(!result.legalMoves.some(move => move.from === 5 && move.to === 6));
+});
+
+test('PEACE doubles use all four moves despite an unavoidable final capture for either color', () => {
+  for (const player of ['White', 'Black']) {
+    let state = player === 'White' ? position({ 0: 1 }, { 4: 1 }) : position({ 19: 1 }, { 23: 1 });
+    let dice = [1, 1, 1, 1];
+    for (let step = 0; step < 4; step++) {
+      const result = analyze(state, player, dice, 'PEACE', step ? 'ENEMY_CONTROL' : 'NORMAL');
+      assert.equal(result.controller, player === 'White' ? 'Black' : 'White');
+      assert.equal(result.controlState, 'ENEMY_CONTROL');
+      assert.ok(result.legalSequences.every(sequence => sequence.moves.length === 4 - step && sequence.totalHits === 1));
+      const move = result.legalMoves[0];
+      assert.equal(move.isHit, step === 3);
+      state = applyMove(state.board, move, player, state.bar, state.off);
+      dice = removeDie(dice, move.die);
+    }
+    assert.equal(state.bar[player === 'White' ? 'Black' : 'White'], 1);
+  }
+});
+
 test('PEACE chooses a complete no-hit turn when one is possible', () => {
   const state = position({ 0: 1 }, { 1: 1 });
   const result = analyze(state, 'White', [1, 2], 'PEACE');

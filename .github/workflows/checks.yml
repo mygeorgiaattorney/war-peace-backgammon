@@ -19,7 +19,7 @@ jobs:
           - browser: chromium
             filter: ''
           - browser: webkit
-            filter: 'free dice choice|used doubles|selected die controls|previous five rolls|normal doubles|iPad messages|centered game messages|VENGEANCE changes|tablet rotation|returning-player sound|music is opt-in'
+            filter: 'WAR captures|PEACE doubles|PEACE cannot|free dice choice|used doubles|selected die controls|previous five rolls|normal doubles|iPad messages|centered game messages|VENGEANCE changes|tablet rotation|returning-player sound|music is opt-in'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -182,6 +182,23 @@ test('computer respects a turn that requires the smaller die first to use both d
   }
 });
 
+test('both computer strategies prioritize WAR captures over a longer quiet turn', () => {
+  const state = position({ 0: 1, 5: 1 }, { 2: 2, 6: 1, 7: 2, 8: 2 });
+  for (const computer of ['BALANCED', 'CONTROLLED_COMEBACK']) {
+    for (const dice of [[1, 2], [2, 1]]) {
+      const move = choose(state, dice, { mode: 'WAR', computer });
+      assert.equal(move.from, 5);
+      assert.equal(move.to, 6);
+      assert.equal(move.die, 1);
+      assert.equal(move.isHit, true);
+      const reflected = choose(mirror(state), dice, { player: 'Black', mode: 'WAR', computer });
+      assert.equal(reflected.from, 18);
+      assert.equal(reflected.to, 17);
+      assert.equal(reflected.isHit, true);
+    }
+  }
+});
+
 test('strategic choices are deterministic and preserve the supplied position', () => {
   const state = { board: engine.createStartingBoard(), bar: { White: 0, Black: 0 }, off: { White: 0, Black: 0 } };
   const before = JSON.stringify(state);
